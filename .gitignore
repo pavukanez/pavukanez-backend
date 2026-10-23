@@ -1,0 +1,29 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!.tfvars.example
+.terraform/
+.terraform.lock.hcl
+
+# Lambda build artifacts
+lambda/lambda_function.zip
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/

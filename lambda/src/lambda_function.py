@@ -1,0 +1,164 @@
+import json
+import os
+import boto3
+import urllib.request
+import urllib.error
+from typing import Dict, Any
+
+# Initialize AWS clients
+secrets_client = boto3.client('secretsmanager')
+
+# Environment variables
+OPENROUTER_API_KEY_SECRET_ARN = os.environ.get('OPENROUTER_API_KEY_SECRET_ARN')
+OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openrouter/free')
+OPENROUTER_BASE_URL = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+
+# Cache for API key
+_cached_api_key = None
+
+
+def get_openrouter_api_key() -> str:
+    """Retrieve OpenRouter API key from AWS Secrets Manager."""
+    global _cached_api_key
+    
+    if _cached_api_key:
+        return _cached_api_key
+    
+    if not OPENROUTER_API_KEY_SECRET_ARN:
+        raise ValueError("OPENROUTER_API_KEY_SECRET_ARN environment variable not set")
+    
+    try:
+        response = secrets_client.get_secret_value(SecretId=OPENROUTER_API_KEY_SECRET_ARN)
+        _cached_api_key = response['SecretString']
+        return _cached_api_key
+    except Exception as e:
+        raise Exception(f"Failed to retrieve OpenRouter API key from Secrets Manager: {str(e)}")
+
+
+def call_openrouter_api(query: str, model: str = None) -> Dict[str, Any]:
+    """Call OpenRouter API to get LLM response."""
+    api_key = get_openrouter_api_key()
+    model = model or OPENROUTER_MODEL
+    
+    url = f"{OPENROUTER_BASE_URL}/chat/completions"
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/pavukanez/pavukanez-backend",
+        "X-Title": "pavukanez-backend"
+    }
+    
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": query
+            }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 2000
+    }
+    
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+    
+    try:
+        with urllib.request.urlopen(req, timeout=25) as response:
+            response_data = json.loads(response.read().decode('utf-8'))
+            return response_data
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        raise Exception(f"OpenRouter API error ({e.code}): {error_body}")
+    except urllib.error.URLError as e:
+        raise Exception(f"Network error calling OpenRouter API: {str(e)}")
+
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Lambda handler for processing user queries via OpenRouter.
+    
+    Expected event format (API Gateway proxy integration):
+    {
+        "body": "{\"query\": \"user query string\"}",
+        "httpMethod": "POST",
+        ...
+    }
+    
+    Returns:
+    {
+        "statusCode": 200,
+        "body": "{\"response\": \"LLM response\", \"model\": \"model-name\"}",
+        "headers": {"Content-Type": "application/json"}
+    }
+    """
+    # Handle API Gateway proxy event
+    http_method = event.get('httpMethod', '')
+    
+    if http_method != 'POST':
+        return {
+            "statusCode": 405,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Method not allowed. Use POST."})
+        }
+    
+    # Parse request body
+    try:
+        body = event.get('body', '{}')
+        if isinstance(body, str):
+            body = json.loads(body)
+    except json.JSONDecodeError:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Invalid JSON in request body"})
+        }
+    
+    # Extract query from body
+    query = body.get('query', '').strip()
+    
+    if not query:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Missing 'query' field in request body"})
+        }
+    
+    # Optional: allow model override from request
+    model = body.get('model', None)
+    
+    try:
+        # Call OpenRouter API
+        response_data = call_openrouter_api(query, model)
+        
+        # Extract the generated response
+        choices = response_data.get('choices', [])
+        if not choices:
+            raise Exception("No choices returned from OpenRouter API")
+        
+        generated_content = choices[0].get('message', {}).get('content', '')
+        used_model = response_data.get('model', OPENROUTER_MODEL)
+        
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "POST, OPTIONS"
+            },
+            "body": json.dumps({
+                "response": generated_content,
+                "model": used_model,
+                "usage": response_data.get('usage', {})
+            })
+        }
+    
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": f"Internal server error: {str(e)}"})
+        }

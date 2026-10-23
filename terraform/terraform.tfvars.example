@@ -1,0 +1,9 @@
+# Terraform variables - Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control (contains sensitive data)
+
+aws_region         = "us-east-1"
+project_name       = "pavukanez-backend"
+lambda_function_name = "pavukanez-backend-openrouter"
+openrouter_api_key = "YOUR_OPENROUTER_API_KEY_HERE"
+openrouter_model   = "openrouter/free"
+api_gateway_stage_name = "prod"
