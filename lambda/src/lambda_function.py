@@ -1,15 +1,11 @@
 import json
 import os
-import boto3
 import urllib.request
 import urllib.error
 from typing import Dict, Any
 
-# Initialize AWS clients
-secrets_client = boto3.client('secretsmanager')
-
 # Environment variables
-OPENROUTER_API_KEY_SECRET_ARN = os.environ.get('OPENROUTER_API_KEY_SECRET_ARN')
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openrouter/free')
 OPENROUTER_BASE_URL = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
 
@@ -18,21 +14,17 @@ _cached_api_key = None
 
 
 def get_openrouter_api_key() -> str:
-    """Retrieve OpenRouter API key from AWS Secrets Manager."""
+    """Retrieve OpenRouter API key from environment variable."""
     global _cached_api_key
     
     if _cached_api_key:
         return _cached_api_key
     
-    if not OPENROUTER_API_KEY_SECRET_ARN:
-        raise ValueError("OPENROUTER_API_KEY_SECRET_ARN environment variable not set")
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY environment variable not set")
     
-    try:
-        response = secrets_client.get_secret_value(SecretId=OPENROUTER_API_KEY_SECRET_ARN)
-        _cached_api_key = response['SecretString']
-        return _cached_api_key
-    except Exception as e:
-        raise Exception(f"Failed to retrieve OpenRouter API key from Secrets Manager: {str(e)}")
+    _cached_api_key = OPENROUTER_API_KEY
+    return _cached_api_key
 
 
 def call_openrouter_api(query: str, model: str = None) -> Dict[str, Any]:
@@ -79,11 +71,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for processing user queries via OpenRouter.
     
-    Expected event format (API Gateway proxy integration):
+    Expected event format (Lambda Function URL):
     {
+        "requestContext": {
+            "http": {
+                "method": "POST",
+                "path": "/",
+                ...
+            }
+        },
         "body": "{\"query\": \"user query string\"}",
-        "httpMethod": "POST",
-        ...
+        "headers": {...},
+        "isBase64Encoded": false
     }
     
     Returns:
@@ -93,8 +92,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"}
     }
     """
-    # Handle API Gateway proxy event
-    http_method = event.get('httpMethod', '')
+    # Handle Lambda Function URL event
+    http_method = event.get('requestContext', {}).get('http', {}).get('method', '')
+    
+    # Handle OPTIONS preflight request
+    if http_method == 'OPTIONS':
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "POST, OPTIONS"
+            },
+            "body": ""
+        }
     
     if http_method != 'POST':
         return {
@@ -106,6 +118,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Parse request body
     try:
         body = event.get('body', '{}')
+        # Lambda Function URL may send body as base64 encoded
+        if event.get('isBase64Encoded', False):
+            import base64
+            body = base64.b64decode(body).decode('utf-8')
         if isinstance(body, str):
             body = json.loads(body)
     except json.JSONDecodeError:

@@ -1,22 +1,31 @@
 # pavukanez-backend
 
-A serverless backend that receives user queries via API Gateway, calls OpenRouter LLM (free models), and returns generated responses.
+A serverless backend that receives user queries via Lambda Function URL, calls OpenRouter LLM (free models), and returns generated responses. **Uses only AWS Free Tier services.**
 
 ## Architecture
 
 ```
-Client → API Gateway (POST /query) → Lambda (Python) → OpenRouter API → Response
-                                    ↓
-                              Secrets Manager (API Key)
+Client → Lambda Function URL (POST /) → Lambda (Python) → OpenRouter API → Response
+                                         ↓
+                                   Env Var (API Key)
 ```
 
 ## Components
 
 - **AWS Lambda** (Python 3.11) - Processes requests and calls OpenRouter
-- **API Gateway** (REST API) - HTTP endpoint for receiving queries
-- **AWS Secrets Manager** - Securely stores OpenRouter API key
+- **Lambda Function URL** - Free HTTPS endpoint (no API Gateway needed)
+- **Lambda Environment Variables** - Stores OpenRouter API key (no Secrets Manager)
 - **IAM Roles/Policies** - Least privilege permissions
-- **CloudWatch Logs** - Logging for Lambda and API Gateway
+- **CloudWatch Logs** - Logging for Lambda
+
+## Free Tier Eligibility
+
+| Service | Free Tier Limit |
+|---------|----------------|
+| Lambda | 1M requests/month, 400K GB-seconds |
+| Lambda Function URLs | 1M requests/month |
+| CloudWatch Logs | 5GB ingestion, 5GB archive |
+| S3 | 5GB standard storage |
 
 ## Prerequisites
 
@@ -49,10 +58,10 @@ terraform apply
 
 ### 3. Test the API
 
-After deployment, you'll get an API endpoint URL. Test it with:
+After deployment, you'll get a Lambda Function URL. Test it with:
 
 ```bash
-curl -X POST "https://<api-id>.execute-api.<region>.amazonaws.com/prod/query" \
+curl -X POST "https://<function-url>.lambda-url.<region>.on.aws/" \
   -H "Content-Type: application/json" \
   -d '{"query": "Hello, how are you?"}'
 ```
@@ -74,7 +83,7 @@ Expected response:
 
 ### Endpoint
 ```
-POST /query
+POST /
 ```
 
 ### Request Body
@@ -122,8 +131,7 @@ pavukanez-backend/
 ├── terraform/
 │   ├── main.tf                 # Main Terraform configuration
 │   ├── variables.tf            # Input variables
-│   ├── terraform.tfvars.example # Example variables file
-│   └── outputs.tf              # Output values
+│   └── terraform.tfvars.example # Example variables file
 ├── lambda/
 │   ├── src/
 │   │   └── lambda_function.py  # Lambda handler code
@@ -140,7 +148,6 @@ pavukanez-backend/
 | `lambda_function_name` | Lambda function name | `pavukanez-backend-openrouter` |
 | `openrouter_api_key` | **Required** - Your OpenRouter API key | - |
 | `openrouter_model` | OpenRouter model to use | `openrouter/free` |
-| `api_gateway_stage_name` | API Gateway stage name | `prod` |
 
 ## OpenRouter Models
 
@@ -154,10 +161,11 @@ The default model is `openrouter/free` which routes to free models. You can spec
 
 ## Security
 
-- API key stored in AWS Secrets Manager (encrypted at rest)
-- Lambda has least-privilege IAM policy (only Secrets Manager read)
-- API Gateway logs access to CloudWatch
+- API key stored in Lambda environment variable (encrypted at rest)
+- Lambda has minimal IAM permissions (only CloudWatch Logs write)
+- Lambda Function URL with CORS configured
 - No public S3 access
+- No API Gateway, no Secrets Manager - reduced attack surface
 
 ## Cleanup
 
@@ -175,14 +183,18 @@ To test the Lambda locally:
 ```bash
 cd lambda/src
 # Set environment variables
-export OPENROUTER_API_KEY_SECRET_ARN="arn:aws:secretsmanager:..."
+export OPENROUTER_API_KEY="your-openrouter-api-key"
 export OPENROUTER_MODEL="openrouter/free"
 export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 
-# Test with a mock event
+# Test with a mock event (Lambda Function URL format)
 python3 -c "
 import lambda_function
-event = {'httpMethod': 'POST', 'body': '{\"query\": \"test\"}'}
+event = {
+    'requestContext': {'http': {'method': 'POST'}},
+    'body': '{\"query\": \"test\"}',
+    'isBase64Encoded': False
+}
 print(lambda_function.lambda_handler(event, None))
 "
 ```

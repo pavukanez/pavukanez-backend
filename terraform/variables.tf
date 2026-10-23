@@ -17,7 +17,7 @@ variable "lambda_function_name" {
 }
 
 variable "openrouter_api_key" {
-  description = "OpenRouter API key (will be stored in Secrets Manager)"
+  description = "OpenRouter API key (stored as Lambda environment variable)"
   type        = string
   sensitive   = true
 }
@@ -26,10 +26,4 @@ variable "openrouter_model" {
   description = "OpenRouter model to use (e.g., openrouter/free)"
   type        = string
   default     = "openrouter/free"
-}
-
-variable "api_gateway_stage_name" {
-  description = "API Gateway stage name"
-  type        = string
-  default     = "prod"
 }
