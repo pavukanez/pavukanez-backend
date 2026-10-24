@@ -5,10 +5,12 @@ A serverless backend that receives user queries via Lambda Function URL, calls O
 ## Architecture
 
 ```
-Client → Lambda Function URL (POST /) → Lambda (Python) → OpenRouter API → Response
-                                         ↓
-                                   Env Var (API Key)
+Client -> Lambda Function URL (POST /) -> Lambda (Python) -> OpenRouter API -> Response
+                                          |
+                                    Env Var (API Key)
 ```
+
+**Note:** Uses `AWS_IAM` authorization for Function URL because organization SCP blocks public (`NONE`) Function URLs. Clients must sign requests with AWS credentials (SigV4).
 
 ## Components
 
@@ -32,6 +34,7 @@ Client → Lambda Function URL (POST /) → Lambda (Python) → OpenRouter API �
 - AWS CLI configured with appropriate permissions
 - Terraform >= 1.0 installed
 - OpenRouter API key (get one at https://openrouter.ai)
+- Python 3.8+ with boto3 and requests (for signed requests)
 
 ## Quick Start
 
@@ -58,39 +61,81 @@ terraform apply
 
 ### 3. Test the API
 
-After deployment, you'll get a Lambda Function URL. Test it with:
+After deployment, you'll get a Lambda Function URL. Since it uses `AWS_IAM` auth (required by organization SCP), you must sign requests with AWS credentials.
+
+**Option A: Python Client (Recommended)**
 
 ```bash
-curl -X POST "https://<function-url>.lambda-url.<region>.on.aws/" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Hello, how are you?"}'
+pip install boto3 requests
 ```
 
-Expected response:
-```json
-{
-  "response": "Hello! I'm doing well, thank you for asking...",
-  "model": "openrouter/free",
-  "usage": {
-    "prompt_tokens": 10,
-    "completion_tokens": 25,
-    "total_tokens": 35
-  }
-}
+```python
+# test_client.py
+import boto3
+import requests
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+import json
+
+def call_function_url(query, model=None):
+    session = boto3.Session()
+    credentials = session.get_credentials().get_frozen_credentials()
+    
+    url = "https://ysx5mqrprsga776f36loxakwcq0bbuqc.lambda-url.us-east-2.on.aws/"
+    payload = {"query": query}
+    if model:
+        payload["model"] = model
+    
+    request = AWSRequest(
+        method="POST",
+        url=url,
+        data=json.dumps(payload),
+        headers={"Content-Type": "application/json"}
+    )
+    SigV4Auth(credentials, "lambda", "us-east-2").add_auth(request)
+    
+    prepared = request.prepare()
+    response = requests.request(
+        prepared.method, prepared.url,
+        headers=prepared.headers, data=prepared.body, timeout=30
+    )
+    return response.json()
+
+if __name__ == "__main__":
+    result = call_function_url("Hello, how are you?")
+    print(json.dumps(result, indent=2))
+```
+
+Run with:
+```bash
+# Export AWS credentials (if using SSO)
+eval $(aws configure export-credentials --format env)
+python test_client.py
+```
+
+**Option B: Direct Lambda Invoke (for testing)**
+
+```bash
+aws lambda invoke \
+  --function-name pavukanez-backend-openrouter \
+  --payload '{"requestContext":{"http":{"method":"POST"}},"body":"{\"query\":\"test\"}","isBase64Encoded":false}' \
+  --region us-east-2 /dev/stdout
 ```
 
 ## API Specification
 
 ### Endpoint
 ```
-POST /
+POST https://ysx5mqrprsga776f36loxakwcq0bbuqc.lambda-url.us-east-2.on.aws/
 ```
+
+**Authentication:** AWS SigV4 (IAM credentials required)
 
 ### Request Body
 ```json
 {
   "query": "Your question or prompt here",
-  "model": "optional-model-override"  // Optional, defaults to openrouter/free
+  "model": "optional-model-override"  # Optional, defaults to openrouter/free
 }
 ```
 
@@ -111,8 +156,14 @@ POST /
 
 **400 Bad Request**
 ```json
-{"error": "Missing 'query' field in request body"}
+{"error": "Missing query field in request body"}
 ```
+
+**403 Forbidden**
+```json
+{"Message": "Forbidden. For troubleshooting Function URL authorization issues..."}
+```
+Request not properly signed with AWS credentials
 
 **405 Method Not Allowed**
 ```json
@@ -164,6 +215,7 @@ The default model is `openrouter/free` which routes to free models. You can spec
 - API key stored in Lambda environment variable (encrypted at rest)
 - Lambda has minimal IAM permissions (only CloudWatch Logs write)
 - Lambda Function URL with CORS configured
+- **AWS_IAM auth required** - Organization SCP blocks public access
 - No public S3 access
 - No API Gateway, no Secrets Manager - reduced attack surface
 

@@ -107,13 +107,14 @@ resource "aws_lambda_function" "openrouter_lambda" {
 }
 
 # Lambda Function URL (free tier eligible, no API Gateway needed)
+# Using AWS_IAM auth type because organization SCP blocks public (NONE) Function URLs
 resource "aws_lambda_function_url" "openrouter_url" {
   function_name      = aws_lambda_function.openrouter_lambda.function_name
-  authorization_type = "NONE"
+  authorization_type = "AWS_IAM"
   cors {
     allow_credentials = false
     allow_headers     = ["Content-Type"]
-    allow_methods     = ["POST", "OPTIONS"]
+    allow_methods     = ["*"]
     allow_origins     = ["*"]
     max_age           = 86400
   }
