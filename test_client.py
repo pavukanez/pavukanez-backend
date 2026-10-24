@@ -9,7 +9,7 @@ def call_function_url(query, model=None):
     session = boto3.Session()
     credentials = session.get_credentials().get_frozen_credentials()
     
-    url = "https://ysx5mqrprsga776f36loxakwcq0bbuqc.lambda-url.us-east-2.on.aws/"
+    url = "https://gbdg5nx6eda2vvzekbp4uakxea0ygnct.lambda-url.us-east-2.on.aws/"
     payload = {"query": query}
     if model:
         payload["model"] = model
