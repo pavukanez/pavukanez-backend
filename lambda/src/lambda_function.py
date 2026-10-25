@@ -4,6 +4,53 @@ import urllib.request
 import urllib.error
 from typing import Dict, Any
 
+
+def check_predefined_queries(query: str) -> str | None:
+    """
+    LangGraph-style routing for predefined queries.
+    Returns predefined response if query matches, else None to continue to LLM.
+    """
+    normalized = query.lower().strip()
+    
+    # Remove common punctuation
+    normalized = normalized.rstrip('?.,!')
+    
+    # "Who are you?" - Agent identity
+    if normalized in [
+        "who are you",
+        "who are you?",
+        "what are you",
+        "what are you?",
+        "tell me about yourself",
+        "introduce yourself"
+    ]:
+        return (
+            "I am Daniel's agent — an AI assistant that knows everything about him. "
+            "I can answer questions about his background, skills, experience, projects, "
+            "and help with any tasks you'd like to delegate to him."
+        )
+    
+    # "Who is Daniel?" - Person intro
+    if normalized in [
+        "who is daniel",
+        "who is daniel?",
+        "tell me about daniel",
+        "who is daniel pham",
+        "who is daniel pham?",
+        "about daniel",
+        "daniel's background",
+        "about daniel pham"
+    ]:
+        return (
+            "Daniel Pham is a Backend & Cloud Infrastructure Engineer with 3+ years of experience. "
+            "He specializes in backend development and cloud infrastructure, with previous roles at "
+            "Cisco, AWS, Novozymes, and TIAA. He builds robust, scalable systems and enjoys working "
+            "with Go, Python, TypeScript, Terraform, Kubernetes, and AWS services."
+        )
+    
+    return None
+
+
 # Environment variables
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openrouter/free')
@@ -148,6 +195,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Missing 'query' field in request body"})
+        }
+
+    # Check for predefined queries (LangGraph-style routing)
+    predefined_response = check_predefined_queries(query)
+    if predefined_response:
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "POST, OPTIONS"
+            },
+            "body": json.dumps({
+                "response": predefined_response,
+                "model": "predefined",
+                "usage": {}
+            })
         }
 
     # Optional: allow model override from request
