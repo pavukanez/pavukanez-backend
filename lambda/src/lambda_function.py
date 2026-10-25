@@ -70,21 +70,21 @@ def call_openrouter_api(query: str, model: str = None) -> Dict[str, Any]:
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda handler for processing user queries via OpenRouter.
-    
-    Expected event format (Lambda Function URL):
-    {
-        "requestContext": {
-            "http": {
-                "method": "POST",
-                "path": "/",
-                ...
-            }
-        },
-        "body": "{\"query\": \"user query string\"}",
-        "headers": {...},
-        "isBase64Encoded": false
-    }
-    
+
+    Supports two invocation modes:
+    1. Lambda Function URL (HTTP) event:
+       {
+           "requestContext": {"http": {"method": "POST", ...}},
+           "body": "{\"query\": \"user query\"}",
+           "headers": {...},
+           "isBase64Encoded": false
+       }
+    2. Direct SDK Invoke event (from AWS SDK):
+       {
+           "query": "user query string",
+           "model": "optional-model-name"
+       }
+
     Returns:
     {
         "statusCode": 200,
@@ -92,11 +92,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"}
     }
     """
-    # Handle Lambda Function URL event
-    http_method = event.get('requestContext', {}).get('http', {}).get('method', '')
-    
-    # Handle OPTIONS preflight request
-    if http_method == 'OPTIONS':
+    # Detect invocation mode: Function URL vs direct SDK invoke
+    request_context = event.get('requestContext', {})
+    http_method = request_context.get('http', {}).get('method', '') if request_context else ''
+
+    # If no requestContext or no http method -> direct SDK invoke
+    is_direct_invoke = not request_context or not http_method
+
+    # Handle OPTIONS preflight request (Function URL only)
+    if not is_direct_invoke and http_method == 'OPTIONS':
         return {
             "statusCode": 200,
             "headers": {
@@ -107,21 +111,26 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             },
             "body": ""
         }
-    
-    if http_method != 'POST':
+
+    if not is_direct_invoke and http_method != 'POST':
         return {
             "statusCode": 405,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Method not allowed. Use POST."})
         }
-    
+
     # Parse request body
     try:
-        body = event.get('body', '{}')
-        # Lambda Function URL may send body as base64 encoded
-        if event.get('isBase64Encoded', False):
-            import base64
-            body = base64.b64decode(body).decode('utf-8')
+        if is_direct_invoke:
+            # Direct SDK invoke: body is the event itself
+            body = event
+        else:
+            # Function URL: parse body from event
+            body = event.get('body', '{}')
+            # Lambda Function URL may send body as base64 encoded
+            if event.get('isBase64Encoded', False):
+                import base64
+                body = base64.b64decode(body).decode('utf-8')
         if isinstance(body, str):
             body = json.loads(body)
     except json.JSONDecodeError:
@@ -130,32 +139,32 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Invalid JSON in request body"})
         }
-    
+
     # Extract query from body
     query = body.get('query', '').strip()
-    
+
     if not query:
         return {
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Missing 'query' field in request body"})
         }
-    
+
     # Optional: allow model override from request
     model = body.get('model', None)
-    
+
     try:
         # Call OpenRouter API
         response_data = call_openrouter_api(query, model)
-        
+
         # Extract the generated response
         choices = response_data.get('choices', [])
         if not choices:
             raise Exception("No choices returned from OpenRouter API")
-        
+
         generated_content = choices[0].get('message', {}).get('content', '')
         used_model = response_data.get('model', OPENROUTER_MODEL)
-        
+
         return {
             "statusCode": 200,
             "headers": {
@@ -170,7 +179,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "usage": response_data.get('usage', {})
             })
         }
-    
+
     except Exception as e:
         print(f"Error processing request: {str(e)}")
         return {
