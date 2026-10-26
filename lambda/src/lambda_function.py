@@ -47,7 +47,7 @@ def get_openrouter_api_key() -> str:
     return _cached_api_key
 
 
-def call_openrouter_api(query: str, model: str = None) -> Dict[str, Any]:
+def call_openrouter_api(query: str, model: str = None, history: str = "") -> Dict[str, Any]:
     """Call OpenRouter API to get LLM response."""
     api_key = get_openrouter_api_key()
     model = model or OPENROUTER_MODEL
@@ -61,18 +61,30 @@ def call_openrouter_api(query: str, model: str = None) -> Dict[str, Any]:
         "X-Title": "pavukanez-backend"
     }
     
+    # Build messages with conversation history
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        }
+    ]
+    
+    # Add conversation history if provided
+    if history:
+        messages.append({
+            "role": "user",
+            "content": f"Previous conversation:\n{history}"
+        })
+    
+    # Add current query
+    messages.append({
+        "role": "user",
+        "content": query
+    })
+    
     payload = {
         "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": query
-            }
-        ],
+        "messages": messages,
         "temperature": 0.7,
         "max_tokens": 2000
     }
@@ -166,6 +178,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     # Extract query from body
     query = body.get('query', '').strip()
+    history = body.get('history', '').strip()
 
     if not query:
         return {
@@ -179,7 +192,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     try:
         # Call OpenRouter API
-        response_data = call_openrouter_api(query, model)
+        response_data = call_openrouter_api(query, model, history)
 
         # Extract the generated response
         choices = response_data.get('choices', [])
