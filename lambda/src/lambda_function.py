@@ -17,7 +17,7 @@ SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant that represents Da
 - **Experience**: 3+ years
 - **Specialization**: Backend development, cloud infrastructure
 - **Previous Companies**: Cisco, AWS, Novozymes, TIAA
-- **Tech Stack**: Go, Python, TypeScript, Terraform, Kubernetes, AWS services
+- **Tech Stack**: Python, TypeScript, Terraform, Kubernetes, AWS services
 - **Focus**: Building robust, scalable systems
 
 ## Your Role
