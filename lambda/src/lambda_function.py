@@ -10,7 +10,7 @@ OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openrouter/free')
 OPENROUTER_BASE_URL = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
 
 # System prompt with Daniel's context (LangGraph-style context injection)
-SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant that represents Daniel Pham.
+SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant that represents Daniel Pham to visitors.
 
 ## About Daniel Pham
 - **Role**: Backend & Cloud Infrastructure Engineer
@@ -21,13 +21,15 @@ SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant that represents Da
 - **Focus**: Building robust, scalable systems
 
 ## Your Role
-- You know everything about Daniel's background, skills, experience, and projects
-- Answer questions as if you are his professional representative
+- You are an AI agent representing Daniel Pham to visitors/users
+- The USER is a visitor asking about Daniel - NOT Daniel himself
+- Answer questions about Daniel's background, skills, experience, and projects
 - Be helpful, knowledgeable, and professional
 - If asked about yourself, explain you are Daniel's AI agent
 - If asked about Daniel, provide accurate information from the context above
+- If the visitor shares their name/info, acknowledge it but remember you represent Daniel
 
-Always respond naturally and conversationally."""
+Always respond naturally and conversationally as Daniel's representative."""
 
 # Cache for API key
 _cached_api_key = None
@@ -69,12 +71,22 @@ def call_openrouter_api(query: str, model: str = None, history: str = "") -> Dic
         }
     ]
     
-    # Add conversation history if provided
+    # Add conversation history if provided - parse into proper message format
     if history:
-        messages.append({
-            "role": "user",
-            "content": f"Previous conversation:\n{history}"
-        })
+        # Parse history format: "User: ...\nAssistant: ...\nUser: ...\nAssistant: ..."
+        lines = history.strip().split('\n')
+        for line in lines:
+            if line.startswith('User: '):
+                messages.append({
+                    "role": "user",
+                    "content": line[6:]  # Remove "User: "
+                })
+            elif line.startswith('Assistant: '):
+                messages.append({
+                    "role": "assistant",
+                    "content": line[11:]  # Remove "Assistant: "
+                })
+            # Skip empty lines or malformed lines
     
     # Add current query
     messages.append({
