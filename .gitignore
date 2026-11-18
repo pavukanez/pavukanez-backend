@@ -28,4 +28,5 @@ __pycache__/
 *.pyo
 .pytest_cache/
 venv/
-.env
+.envlambda/function.zip
+lambda/function.zip
