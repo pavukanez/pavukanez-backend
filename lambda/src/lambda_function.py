@@ -80,7 +80,7 @@ def call_openrouter_api(query: str, model: Optional[str] = None, history: str = 
         "model": model or OPENROUTER_MODEL,
         "messages": messages,
         "temperature": 0.7,
-        "max_tokens": 1000,
+        "max_tokens": 4000,
         "stream": False
     }
     
@@ -121,7 +121,7 @@ def call_openrouter_api_stream(query: str, model: Optional[str] = None, history:
         "model": model or OPENROUTER_MODEL,
         "messages": messages,
         "temperature": 0.7,
-        "max_tokens": 1000,
+        "max_tokens": 4000,
         "stream": True
     }
     
