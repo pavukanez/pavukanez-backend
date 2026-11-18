@@ -33,8 +33,8 @@ jobs:
 
       - name: Package Lambda function
         run: |
-          cd lambda
-          zip -r function.zip src/
+          cd lambda/src
+          zip -r ../function.zip .
           echo "PACKAGE_PATH=lambda/function.zip" >> $GITHUB_ENV
 
       - name: Deploy to Lambda
