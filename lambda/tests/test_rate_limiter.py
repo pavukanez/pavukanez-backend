@@ -1,12 +1,12 @@
 """Tests for rate limiter."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from src.tools.rate_limiter import RateLimiter
 
 
 @pytest.fixture
 def mock_redis():
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture

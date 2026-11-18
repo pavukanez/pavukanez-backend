@@ -1,12 +1,12 @@
 """Tests for search cache."""
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from src.tools.cache import SearchCache
 
 
 @pytest.fixture
 def mock_redis():
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
