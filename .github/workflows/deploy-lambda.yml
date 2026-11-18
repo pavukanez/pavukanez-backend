@@ -11,6 +11,7 @@ on:
       - '!**/*.md'
       - '!**/test*.py'
       - '!**/__pycache__/**'
+  workflow_dispatch:  # Manual trigger from GitHub UI
 
 permissions:
   id-token: write   # Required for OIDC
