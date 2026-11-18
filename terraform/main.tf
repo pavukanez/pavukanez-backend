@@ -111,6 +111,7 @@ resource "aws_lambda_function" "openrouter_lambda" {
 resource "aws_lambda_function_url" "openrouter_url" {
   function_name      = aws_lambda_function.openrouter_lambda.function_name
   authorization_type = "AWS_IAM"
+  invoke_mode        = "RESPONSE_STREAM"
   cors {
     allow_credentials = false
     allow_headers     = ["Content-Type"]
