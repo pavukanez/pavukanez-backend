@@ -1,0 +1,51 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lambda/src/**'
+      - 'lambda/requirements*.txt'
+      - 'lambda/Dockerfile*'
+      - '!.github/**'
+      - '!**/*.md'
+      - '!**/test*.py'
+      - '!**/__pycache__/**'
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read    # Required for checkout
+
+jobs:
+  deploy:
+    name: Deploy to AWS Lambda
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::098876901014:role/GitHubActionsDeployLambda
+          aws-region: us-east-2
+
+      - name: Package Lambda function
+        run: |
+          cd lambda
+          zip -r function.zip src/
+          echo "PACKAGE_PATH=lambda/function.zip" >> $GITHUB_ENV
+
+      - name: Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name pavukanez-backend-openrouter \
+            --zip-file fileb://${{ env.PACKAGE_PATH }}
+
+      - name: Verify deployment
+        run: |
+          aws lambda get-function \
+            --function-name pavukanez-backend-openrouter \
+            --query 'Configuration.{FunctionName:FunctionName,LastModified:LastModified,CodeSize:CodeSize}' \
+            --output table
