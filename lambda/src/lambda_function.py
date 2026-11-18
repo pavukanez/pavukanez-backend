@@ -13,6 +13,7 @@ OPENROUTER_BASE_URL = os.environ.get('OPENROUTER_BASE_URL', 'https://openrouter.
 DEPLOY_TEST = True
 DEPLOY_TEST_V2 = True
 DEPLOY_TEST_V3 = True
+DEPLOY_TEST_V4 = True
 
 # System prompt with Daniel's context (LangGraph-style context injection)
 SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant that represents Daniel Pham to visitors.
