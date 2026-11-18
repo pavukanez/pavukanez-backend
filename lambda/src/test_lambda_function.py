@@ -1,7 +1,5 @@
 """
 Unit tests for lambda_function.py
-
-Tests the safety metadata filtering and other functionality.
 """
 import json
 import sys
@@ -10,112 +8,7 @@ import os
 # Add the src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
-from lambda_function import filter_safety_metadata, lambda_handler
-
-
-class TestFilterSafetyMetadata:
-    """Tests for the filter_safety_metadata function."""
-
-    def test_user_safety_safe_at_start(self):
-        """Test filtering 'User Safety: safe' at the start of response."""
-        content = "User Safety: safe Hello, how can I help you?"
-        expected = "Hello, how can I help you?"
-        assert filter_safety_metadata(content) == expected
-
-    def test_user_safety_safe_with_period(self):
-        """Test filtering 'User Safety: safe.' with period."""
-        content = "User Safety: safe. Hello, how can I help you?"
-        expected = "Hello, how can I help you?"
-        assert filter_safety_metadata(content) == expected
-
-    def test_user_safety_unsafe_at_start(self):
-        """Test filtering 'User Safety: unsafe' at the start."""
-        content = "User Safety: unsafe This content was flagged."
-        expected = "This content was flagged."
-        assert filter_safety_metadata(content) == expected
-
-    def test_safety_safe_at_start(self):
-        """Test filtering 'Safety: safe' at the start."""
-        content = "Safety: safe Hello there!"
-        expected = "Hello there!"
-        assert filter_safety_metadata(content) == expected
-
-    def test_user_safety_on_new_line(self):
-        """Test filtering 'User Safety: safe' on a new line."""
-        content = "Hello!\nUser Safety: safe\nHow are you?"
-        expected = "Hello!\nHow are you?"
-        assert filter_safety_metadata(content) == expected
-
-    def test_safety_on_new_line(self):
-        """Test filtering 'Safety: safe' on a new line."""
-        content = "Hello!\nSafety: safe\nHow are you?"
-        expected = "Hello!\nHow are you?"
-        assert filter_safety_metadata(content) == expected
-
-    def test_bracketed_user_safety_safe(self):
-        """Test filtering '[User Safety: safe]' format."""
-        content = "[User Safety: safe] Hello there!"
-        expected = "Hello there!"
-        assert filter_safety_metadata(content) == expected
-
-    def test_bracketed_user_safety_unsafe(self):
-        """Test filtering '[User Safety: unsafe]' format."""
-        content = "[User Safety: unsafe] This was flagged."
-        expected = "This was flagged."
-        assert filter_safety_metadata(content) == expected
-
-    def test_parenthesized_user_safety_safe(self):
-        """Test filtering '(User Safety: safe)' format."""
-        content = "(User Safety: safe) Hello there!"
-        expected = "Hello there!"
-        assert filter_safety_metadata(content) == expected
-
-    def test_parenthesized_user_safety_unsafe(self):
-        """Test filtering '(User Safety: unsafe)' format."""
-        content = "(User Safety: unsafe) This was flagged."
-        expected = "This was flagged."
-        assert filter_safety_metadata(content) == expected
-
-    def test_case_insensitive(self):
-        """Test that filtering is case-insensitive."""
-        content = "USER SAFETY: SAFE Hello!"
-        expected = "Hello!"
-        assert filter_safety_metadata(content) == expected
-
-    def test_mixed_case(self):
-        """Test filtering with mixed case."""
-        content = "User Safety: Safe Hello!"
-        expected = "Hello!"
-        assert filter_safety_metadata(content) == expected
-
-    def test_multiple_patterns(self):
-        """Test filtering multiple safety patterns in one response."""
-        content = "User Safety: safe\nSafety: safe\nHello there!"
-        expected = "Hello there!"
-        assert filter_safety_metadata(content) == expected
-
-    def test_no_safety_metadata(self):
-        """Test that normal content passes through unchanged."""
-        content = "Hello, how can I help you today?"
-        expected = "Hello, how can I help you today?"
-        assert filter_safety_metadata(content) == expected
-
-    def test_empty_string(self):
-        """Test handling of empty string."""
-        assert filter_safety_metadata("") == ""
-        assert filter_safety_metadata(None) is None
-
-    def test_whitespace_cleanup(self):
-        """Test that extra whitespace is cleaned up."""
-        content = "User Safety: safe\n\n\n\nHello!"
-        expected = "Hello!"
-        assert filter_safety_metadata(content) == expected
-
-    def test_content_with_colon_not_safety(self):
-        """Test that content with colons but not safety patterns is preserved."""
-        content = "The answer is: 42. User Safety: safe"
-        expected = "The answer is: 42."
-        assert filter_safety_metadata(content) == expected
+from lambda_function import lambda_handler
 
 
 class TestLambdaHandler:
@@ -138,7 +31,7 @@ class TestLambdaHandler:
 
 def run_tests():
     """Run all tests and report results."""
-    test_classes = [TestFilterSafetyMetadata, TestLambdaHandler]
+    test_classes = [TestLambdaHandler]
     total_tests = 0
     passed = 0
     failed = 0

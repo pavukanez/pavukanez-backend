@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import urllib.request
 import urllib.error
 from typing import Dict, Any, Generator, Optional
@@ -34,51 +33,6 @@ Always respond naturally and conversationally as Daniel's representative."""
 
 # Cache for API key
 _cached_api_key = None
-
-
-def filter_safety_metadata(content: str) -> str:
-    """
-    Filter out safety metadata that may leak from LLM responses.
-    
-    Some models (especially via OpenRouter) may include safety/moderation
-    metadata in the response content, such as "User Safety: safe" or similar
-    patterns. This function removes those artifacts.
-    
-    Args:
-        content: Raw response content from the LLM
-        
-    Returns:
-        Cleaned content with safety metadata removed
-    """
-    if not content:
-        return content
-    
-    # Patterns to remove (case-insensitive)
-    # More specific patterns first (bracketed, parenthesized), then general patterns
-    safety_patterns = [
-        r'\[User Safety:\s*safe\]',  # "[User Safety: safe]" format
-        r'\[User Safety:\s*unsafe\]',  # "[User Safety: unsafe]" format
-        r'\(User Safety:\s*safe\)',  # "(User Safety: safe)" format
-        r'\(User Safety:\s*unsafe\)',  # "(User Safety: unsafe)" format
-        r'^User Safety:\s*safe\s*\.?\s*',  # "User Safety: safe" at start
-        r'^User Safety:\s*unsafe\s*\.?\s*',  # "User Safety: unsafe" at start
-        r'^Safety:\s*safe\s*\.?\s*',  # "Safety: safe" at start
-        r'^Safety:\s*unsafe\s*\.?\s*',  # "Safety: unsafe" at start
-        r'User Safety:\s*safe\s*\.?\s*',  # "User Safety: safe" anywhere
-        r'User Safety:\s*unsafe\s*\.?\s*',  # "User Safety: unsafe" anywhere
-        r'Safety:\s*safe\s*\.?\s*',  # "Safety: safe" anywhere
-        r'Safety:\s*unsafe\s*\.?\s*',  # "Safety: unsafe" anywhere
-    ]
-    
-    cleaned = content
-    for pattern in safety_patterns:
-        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
-    
-    # Clean up any extra whitespace/newlines left over
-    cleaned = re.sub(r'^\s+|\s+$', '', cleaned)  # Trim leading/trailing whitespace
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)  # Collapse excessive newlines
-    
-    return cleaned
 
 
 def get_openrouter_api_key() -> str:
@@ -184,10 +138,7 @@ def call_openrouter_api_stream(query: str, model: Optional[str] = None, history:
                             delta = choices[0].get('delta', {})
                             content = delta.get('content', '')
                             if content:
-                                # Filter safety metadata from each chunk
-                                filtered = filter_safety_metadata(content)
-                                if filtered:
-                                    yield filtered
+                                    yield content
                     except json.JSONDecodeError:
                         continue
     except urllib.error.HTTPError as e:
@@ -302,9 +253,6 @@ def lambda_handler(event: Dict[str, Any], context: Any, response_stream=None) ->
             raise Exception("No choices returned from OpenRouter API")
         
         generated_content = choices[0].get('message', {}).get('content', '')
-        
-        # Filter out safety metadata that may leak from LLM responses
-        generated_content = filter_safety_metadata(generated_content)
         
         used_model = response_data.get('model', OPENROUTER_MODEL)
         
