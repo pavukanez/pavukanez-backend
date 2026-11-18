@@ -25,40 +25,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Debug OIDC token claims
-        run: |
-          echo "=== GitHub OIDC Environment ==="
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
-          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:0:20}..."
-          echo "GITHUB_REF: $GITHUB_REF"
-          echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
-          
-          # Request token with audience = repo URL
-          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://github.com/pavukanez/pavukanez-backend" | jq -r .value)
-          
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "ERROR: Failed to get token"
-            exit 1
-          fi
-          
-          echo "Token obtained (length: ${#TOKEN})"
-          echo "Token header:"
-          echo "$TOKEN" | cut -d. -f1 | base64 -d 2>/dev/null | jq . || echo "Failed to decode header"
-          echo "Token payload:"
-          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null)
-          echo "$PAYLOAD" | jq . || echo "Failed to decode payload"
-          
-          # Extract claims for verification
-          SUB=$(echo "$PAYLOAD" | jq -r .sub)
-          AUD=$(echo "$PAYLOAD" | jq -r .aud)
-          echo "sub claim: $SUB"
-          echo "aud claim: $AUD"
-
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials (static)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::098876901014:role/GitHubActionsDeployLambda
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
       - name: Package Lambda function
