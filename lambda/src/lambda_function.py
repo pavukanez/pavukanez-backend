@@ -19,6 +19,7 @@ DEPLOY_TEST_V6 = True
 DEPLOY_TEST_V7_NO_AUD = True
 DEPLOY_TEST_V8_FIXED_URL = True
 DEPLOY_TEST_V9_WITH_AUD = True
+DEPLOY_TEST_V10_DEBUG_TOKEN = True
 
 # System prompt with Daniel's context (LangGraph-style context injection)
 SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant that represents Daniel Pham to visitors.
