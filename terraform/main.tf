@@ -75,7 +75,7 @@ resource "aws_iam_role" "lambda_role" {
       Principal = {
         Service = "lambda.amazonaws.com"
       }
-    }]})
+  }] })
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
@@ -96,9 +96,17 @@ resource "aws_lambda_function" "openrouter_lambda" {
 
   environment {
     variables = {
-      OPENROUTER_API_KEY = var.openrouter_api_key
-      OPENROUTER_MODEL   = var.openrouter_model
+      OPENROUTER_API_KEY  = var.openrouter_api_key
+      OPENROUTER_MODEL    = var.openrouter_model
       OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+      # Upstash Redis for rate limiting & caching
+      UPSTASH_REDIS_REST_URL   = var.upstash_redis_rest_url
+      UPSTASH_REDIS_REST_TOKEN = var.upstash_redis_rest_token
+      # Search configuration
+      SEARCH_RATE_LIMIT  = "30"
+      SEARCH_CACHE_TTL   = "3600"
+      SEARCH_MAX_RESULTS = "5"
+      MAX_TOOL_CALLS     = "3"
     }
   }
 
