@@ -1,7 +1,6 @@
-# Core LangGraph + LangChain
-langgraph==0.2.0
-langchain-core>=0.2.27,<0.3
-langchain-openai>=0.0.1,<0.2.0
+# Minimal pure Python dependencies for Lambda
+# Only use packages that are pure Python or have good manylinux wheels
+# NO openai, NO pydantic, NO langchain
 
 # DuckDuckGo Search (no API key needed)
 ddgs==9.16.1
@@ -9,10 +8,12 @@ ddgs==9.16.1
 # Redis (Upstash) - for rate limiting & caching
 upstash-redis==1.0.0
 
-# HTTP client with retry/timeout
-httpx>=0.26.0,<1.0.0
-tenacity==8.2.0
+# HTTP client
+httpx==0.28.1
+tenacity==8.2.3
 
 # Utilities
-pydantic>=2.7.4,<3.0.0
-python-dotenv>=1.2.2
+python-dotenv==1.0.1
+
+# Required by httpx/pydantic
+typing_extensions==4.16.0

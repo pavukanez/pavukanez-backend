@@ -1,26 +1,25 @@
-"""DuckDuckGo Search tool for LangGraph agent (no API key required)."""
-from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field, PrivateAttr
-from typing import Optional, Type
+"""DuckDuckGo Search tool (no API key required, no pydantic/langchain dependencies)."""
 import asyncio
 import json
 import hashlib
-from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+from dataclasses import dataclass
 
 from ..config.settings import settings
 from .rate_limiter import RateLimiter
 from .cache import SearchCache
 
 
-class DuckDuckGoSearchInput(BaseModel):
+@dataclass
+class DuckDuckGoSearchInput:
     """Input schema for DuckDuckGo Search tool."""
-    query: str = Field(description="Search query string")
-    num_results: int = Field(default=5, ge=1, le=10, description="Number of results to return")
-    recency_days: Optional[int] = Field(default=None, description="Limit results to last N days")
+    query: str
+    num_results: int = 5
+    recency_days: Optional[int] = None
 
 
-class DuckDuckGoSearchTool(BaseTool):
-    """LangChain-compatible tool for DuckDuckGo HTML scraping (no API key needed)."""
+class DuckDuckGoSearchTool:
+    """Simple tool for DuckDuckGo HTML scraping (no API key needed)."""
 
     name: str = "duckduckgo_search"
     description: str = (
@@ -28,19 +27,14 @@ class DuckDuckGoSearchTool(BaseTool):
         "Use this when you need up-to-date information not in your training data. "
         "Returns structured results with title, URL, snippet, and source. No API key required."
     )
-    args_schema: Type[BaseModel] = DuckDuckGoSearchInput
 
-    # Private attributes for dependencies (not part of schema)
-    _rate_limiter: RateLimiter = PrivateAttr()
-    _cache: SearchCache = PrivateAttr()
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Initialize shared dependencies on first instantiation
+    def __init__(self):
+        # Initialize shared dependencies
         from upstash_redis import Redis
+        from ..config.settings import settings
         redis = Redis(url=settings.upstash_url, token=settings.upstash_token)
-        object.__setattr__(self, '_rate_limiter', RateLimiter(redis, limit=settings.search_rate_limit))
-        object.__setattr__(self, '_cache', SearchCache(redis, default_ttl=settings.search_cache_ttl))
+        self._rate_limiter = RateLimiter(redis, limit=settings.search_rate_limit)
+        self._cache = SearchCache(redis, default_ttl=settings.search_cache_ttl)
 
     @property
     def rate_limiter(self) -> RateLimiter:

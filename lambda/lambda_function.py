@@ -1,12 +1,14 @@
 import json
 import os
+import sys
 from typing import Dict, Any, Optional
+
+# Add the current directory to Python path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Load settings early
 from src.config.settings import settings
-from src.agent.graph import graph
-from src.agent.state import AgentState
-from src.utils.streaming import stream_graph_response
+from src.agent.graph import invoke_agent
 
 
 # Deployment test marker - triggers GitHub Actions workflow
@@ -26,7 +28,7 @@ DEPLOY_TEST_V13_STATIC_CREDS = True
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Main Lambda handler with LangGraph agent."""
+    """Main Lambda handler with simple agent."""
     
     # Parse request body
     body = event.get("body", {})
@@ -44,37 +46,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not query:
         return _error_response(400, "Missing 'query' field")
     
-    # Initial state
-    initial_state: AgentState = {
-        "messages": [{"role": "user", "content": query}],
-        "query": query,
-        "history": history,
-        "stream": stream,
-        "tool_call_count": 0,
-        "max_tool_calls": settings.max_tool_calls,
-        "request_id": request_id,
-        "user_id": None,
-    }
-    
     try:
         if stream:
-            return _streaming_response(initial_state, context)
+            return _streaming_response(query, history, context)
         else:
-            return _non_streaming_response(initial_state)
+            return _non_streaming_response(query, history)
             
     except Exception as e:
         print(f"Error: {str(e)}")
         return _error_response(500, f"Internal server error: {str(e)}")
 
 
-def _streaming_response(state: AgentState, context: Any) -> Dict[str, Any]:
+def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any]:
     """Handle streaming response via Lambda response streaming."""
     # Check if response streaming is available
     response_stream = getattr(context, 'response_stream', None)
     
     if not response_stream:
         # Fallback: collect all and return
-        return _non_streaming_response(state)
+        return _non_streaming_response(query, history)
     
     # Write initial headers
     response_stream.write(json.dumps({
@@ -88,14 +78,16 @@ def _streaming_response(state: AgentState, context: Any) -> Dict[str, Any]:
     }) + "\n")
     
     try:
-        # Stream the graph
-        import asyncio
+        # For now, use non-streaming and simulate streaming
+        response_text = invoke_agent(query, history)
         
-        async def stream_and_write():
-            async for chunk in stream_graph_response(state):
-                response_stream.write(chunk)
+        # Stream the response in chunks
+        chunk_size = 50
+        for i in range(0, len(response_text), chunk_size):
+            chunk = response_text[i:i+chunk_size]
+            response_stream.write(json.dumps({"body": chunk}) + "\n")
         
-        asyncio.run(stream_and_write())
+        response_stream.write(json.dumps({"body": "", "isFinal": True}) + "\n")
         
     except Exception as e:
         print(f"Streaming error: {str(e)}")
@@ -105,13 +97,24 @@ def _streaming_response(state: AgentState, context: Any) -> Dict[str, Any]:
     return {}  # No return value for streaming
 
 
-def _non_streaming_response(state: AgentState) -> Dict[str, Any]:
-    """Execute graph and return final response."""
-    result = graph.invoke(state)
+def _non_streaming_response(query: str, history: str) -> Dict[str, Any]:
+    """Execute agent and return final response."""
+    try:
+        response_text = invoke_agent(query, history)
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Agent execution error: {error_msg}")
+        # Check for OpenRouter specific errors
+        if "403" in error_msg or "PermissionDenied" in error_msg or "limit exceeded" in error_msg.lower():
+            return _error_response(502, "LLM service unavailable: API key limit exceeded. Please check OpenRouter key limits.")
+        if "401" in error_msg or "AuthenticationError" in error_msg:
+            return _error_response(502, "LLM service unavailable: Invalid API key.")
+        return _error_response(500, f"Agent execution failed: {error_msg}")
     
-    # Extract final AI message
-    final_message = result["messages"][-1]
-    response_text = final_message.content if hasattr(final_message, "content") else str(final_message)
+    # Check for empty response
+    if not response_text or response_text.strip() == "":
+        print("Warning: Empty response from LLM")
+        return _error_response(502, "LLM returned empty response. Please try again.")
     
     return {
         "statusCode": 200,
@@ -135,3 +138,4 @@ def _error_response(status: int, message: str) -> Dict[str, Any]:
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps({"error": message})
     }
+# force rebuild

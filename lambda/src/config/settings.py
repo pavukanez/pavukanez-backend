@@ -1,27 +1,24 @@
-"""Application settings using Pydantic."""
+"""Application settings (no pydantic dependency)."""
 import os
-from pydantic import BaseModel
 from functools import lru_cache
+from dataclasses import dataclass
 
 
-class Settings(BaseModel):
+@dataclass
+class Settings:
     """Application settings loaded from environment variables."""
 
-    # OpenRouter
+    # Required fields (no defaults)
     openrouter_api_key: str
-    openrouter_model: str = "openrouter/auto"
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-
-    # Upstash Redis
     upstash_url: str
     upstash_token: str
 
-    # Search settings
+    # Optional fields with defaults
+    openrouter_model: str = "openrouter/auto"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     search_rate_limit: int = 30
     search_cache_ttl: int = 3600
     search_max_results: int = 5
-
-    # Agent settings
     max_tool_calls: int = 3
 
     @classmethod
@@ -29,10 +26,10 @@ class Settings(BaseModel):
         """Create settings from environment variables."""
         return cls(
             openrouter_api_key=os.environ["OPENROUTER_API_KEY"],
-            openrouter_model=os.environ.get("OPENROUTER_MODEL", "openrouter/auto"),
-            openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             upstash_url=os.environ["UPSTASH_REDIS_REST_URL"],
             upstash_token=os.environ["UPSTASH_REDIS_REST_TOKEN"],
+            openrouter_model=os.environ.get("OPENROUTER_MODEL", "openrouter/auto"),
+            openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             search_rate_limit=int(os.environ.get("SEARCH_RATE_LIMIT", "30")),
             search_cache_ttl=int(os.environ.get("SEARCH_CACHE_TTL", "3600")),
             search_max_results=int(os.environ.get("SEARCH_MAX_RESULTS", "5")),

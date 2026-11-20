@@ -49,11 +49,45 @@ resource "aws_s3_bucket_public_access_block" "lambda_deployment" {
   restrict_public_buckets = true
 }
 
+# Null resource to create the deployment package with dependencies at root level
+resource "null_resource" "lambda_package" {
+  triggers = {
+    requirements_hash = filemd5("${path.module}/../lambda/requirements.txt")
+    source_hash       = filemd5("${path.module}/../lambda/lambda_function.py")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      cd ${path.module}/../lambda
+      rm -rf deploy_package
+      mkdir -p deploy_package
+      # Copy source code
+      cp -r src deploy_package/
+      cp lambda_function.py deploy_package/
+      cp requirements.txt deploy_package/
+      # Install dependencies
+      cd deploy_package
+      python3 -m pip install --target . -r requirements.txt --quiet --no-cache-dir 2>/dev/null
+      # Remove unnecessary files
+      find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+      find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+      find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+      find . -name "*.pyc" -delete 2>/dev/null || true
+      find . -name "*.pyo" -delete 2>/dev/null || true
+      find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
+      find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
+      find . -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
+    EOT
+  }
+}
+
 # Lambda deployment package
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/../lambda/src"
-  output_path = "${path.module}/../lambda/lambda_function.zip"
+  source_dir  = "${path.module}/../lambda/deploy_package"
+  output_path = abspath("${path.module}/../lambda/lambda_function.zip")
+  depends_on  = [null_resource.lambda_package]
 }
 
 resource "aws_s3_object" "lambda_zip" {
@@ -75,7 +109,7 @@ resource "aws_iam_role" "lambda_role" {
       Principal = {
         Service = "lambda.amazonaws.com"
       }
-  }] })
+    }] })
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
