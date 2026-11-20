@@ -109,7 +109,7 @@ resource "aws_iam_role" "lambda_role" {
       Principal = {
         Service = "lambda.amazonaws.com"
       }
-    }] })
+  }] })
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
@@ -125,8 +125,8 @@ resource "aws_lambda_function" "openrouter_lambda" {
   handler       = "lambda_function.lambda_handler"
   s3_bucket     = aws_s3_bucket.lambda_deployment.id
   s3_key        = aws_s3_object.lambda_zip.key
-  timeout       = 30
-  memory_size   = 256
+  timeout       = 60
+  memory_size   = 512
 
   environment {
     variables = {
@@ -141,6 +141,12 @@ resource "aws_lambda_function" "openrouter_lambda" {
       SEARCH_CACHE_TTL   = "3600"
       SEARCH_MAX_RESULTS = "5"
       MAX_TOOL_CALLS     = "3"
+      # GitHub configuration
+      GITHUB_TOKEN       = var.github_token
+      GITHUB_RATE_LIMIT  = var.github_rate_limit
+      GITHUB_CACHE_TTL   = var.github_cache_ttl
+      MAX_REPO_SIZE_MB   = var.max_repo_size_mb
+      MAX_FILES_PER_REPO = var.max_files_per_repo
     }
   }
 

@@ -6,3 +6,12 @@ project_name       = "pavukanez-backend"
 lambda_function_name = "pavukanez-backend-openrouter"
 openrouter_api_key = "YOUR_OPENROUTER_API_KEY_HERE"
 openrouter_model   = "openrouter/free"
+upstash_redis_rest_url = "YOUR_UPSTASH_REDIS_REST_URL"
+upstash_redis_rest_token = "YOUR_UPSTASH_REDIS_REST_TOKEN"
+
+# GitHub settings (optional - for private repos in future)
+github_token = ""
+github_rate_limit = 100
+github_cache_ttl = 3600
+max_repo_size_mb = 100
+max_files_per_repo = 200

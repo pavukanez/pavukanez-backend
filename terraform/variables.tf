@@ -39,3 +39,35 @@ variable "upstash_redis_rest_token" {
   type        = string
   sensitive   = true
 }
+
+# GitHub settings
+variable "github_token" {
+  description = "GitHub token for private repos (optional, for future use)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "github_rate_limit" {
+  description = "GitHub API requests per hour per user"
+  type        = number
+  default     = 100
+}
+
+variable "github_cache_ttl" {
+  description = "Cache TTL for GitHub data in seconds"
+  type        = number
+  default     = 3600
+}
+
+variable "max_repo_size_mb" {
+  description = "Maximum repository size in MB to process"
+  type        = number
+  default     = 100
+}
+
+variable "max_files_per_repo" {
+  description = "Maximum files to fetch from a repository"
+  type        = number
+  default     = 200
+}

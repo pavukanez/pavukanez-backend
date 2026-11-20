@@ -2,6 +2,7 @@
 import os
 from functools import lru_cache
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -21,6 +22,13 @@ class Settings:
     search_max_results: int = 5
     max_tool_calls: int = 3
 
+    # GitHub settings
+    github_token: Optional[str] = None
+    github_rate_limit: int = 100
+    github_cache_ttl: int = 3600
+    max_repo_size_mb: int = 100
+    max_files_per_repo: int = 200
+
     @classmethod
     def from_env(cls) -> "Settings":
         """Create settings from environment variables."""
@@ -34,6 +42,11 @@ class Settings:
             search_cache_ttl=int(os.environ.get("SEARCH_CACHE_TTL", "3600")),
             search_max_results=int(os.environ.get("SEARCH_MAX_RESULTS", "5")),
             max_tool_calls=int(os.environ.get("MAX_TOOL_CALLS", "3")),
+            github_token=os.environ.get("GITHUB_TOKEN"),
+            github_rate_limit=int(os.environ.get("GITHUB_RATE_LIMIT", "100")),
+            github_cache_ttl=int(os.environ.get("GITHUB_CACHE_TTL", "3600")),
+            max_repo_size_mb=int(os.environ.get("MAX_REPO_SIZE_MB", "100")),
+            max_files_per_repo=int(os.environ.get("MAX_FILES_PER_REPO", "200")),
         )
 
 
