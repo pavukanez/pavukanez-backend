@@ -4,13 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - 'lambda/src/**'
-      - 'lambda/requirements*.txt'
-      - 'lambda/Dockerfile*'
+      - 'lambda/**'
       - '!.github/**'
       - '!**/*.md'
       - '!**/test*.py'
       - '!**/__pycache__/**'
+      - '!lambda/deploy_package/**'
+      - '!lambda/lambda_package/**'
+      - '!lambda/*.zip'
   workflow_dispatch:  # Manual trigger from GitHub UI
 
 permissions:
@@ -32,10 +33,44 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
-      - name: Package Lambda function
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Package Lambda function with dependencies
         run: |
-          cd lambda/src
-          zip -r ../function.zip .
+          set -e
+          cd lambda
+          
+          # Clean previous builds
+          rm -rf deploy_package
+          rm -f function.zip
+          
+          # Create package directory
+          mkdir -p deploy_package
+          
+          # Copy source code
+          cp -r src deploy_package/
+          cp lambda_function.py deploy_package/
+          cp requirements.txt deploy_package/
+          
+          # Install dependencies
+          cd deploy_package
+          python3 -m pip install --target . -r requirements.txt --quiet --no-cache-dir
+          
+          # Remove unnecessary files to reduce size
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+          find . -name "*.pyc" -delete 2>/dev/null || true
+          find . -name "*.pyo" -delete 2>/dev/null || true
+          find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
+          find . -name "*.so" -delete 2>/dev/null || true  # Remove compiled extensions (not portable)
+          
+          # Create deployment zip
+          cd ..
+          zip -r function.zip deploy_package/
           echo "PACKAGE_PATH=lambda/function.zip" >> $GITHUB_ENV
 
       - name: Deploy to Lambda
