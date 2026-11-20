@@ -68,9 +68,10 @@ jobs:
           find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
           find . -name "*.so" -delete 2>/dev/null || true  # Remove compiled extensions (not portable)
           
-          # Create deployment zip
+          # Create deployment zip - Lambda expects handler at root, so zip contents of deploy_package
+          cd deploy_package
+          zip -r ../function.zip .
           cd ..
-          zip -r function.zip deploy_package/
           echo "PACKAGE_PATH=lambda/function.zip" >> $GITHUB_ENV
 
       - name: Deploy to Lambda
