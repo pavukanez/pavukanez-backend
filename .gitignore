@@ -8,6 +8,8 @@
 
 # Lambda build artifacts
 lambda/lambda_function.zip
+lambda/deploy_package/
+lambda/lambda_package/
 
 # IDE
 .vscode/
@@ -28,5 +30,4 @@ __pycache__/
 *.pyo
 .pytest_cache/
 venv/
-.envlambda/function.zip
-lambda/function.zip
+.env
