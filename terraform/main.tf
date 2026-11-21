@@ -165,6 +165,24 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Main Lambda needs permission to send messages to SQS queue for repo reviews
+resource "aws_iam_role_policy" "lambda_sqs_permissions" {
+  name = "${var.project_name}-lambda-sqs-permissions"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = [
+        "sqs:SendMessage",
+        "sqs:GetQueueAttributes"
+      ]
+      Effect   = "Allow"
+      Resource = aws_sqs_queue.repo_review_queue.arn
+    }]
+  })
+}
+
 # SQS Queue for async repo reviews with Dead Letter Queue
 resource "aws_sqs_queue" "repo_review_dlq" {
   name                       = "${var.project_name}-repo-review-dlq"
@@ -324,7 +342,7 @@ resource "aws_lambda_function" "worker_lambda" {
       # SQS & DynamoDB
       REPO_REVIEW_QUEUE_URL = aws_sqs_queue.repo_review_queue.url
       REPO_REVIEW_TABLE_NAME = aws_dynamodb_table.repo_review_jobs.name
-      AWS_REGION         = var.aws_region
+      LAMBDA_AWS_REGION   = var.aws_region
     }
   }
 
@@ -361,11 +379,12 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
   retention_in_days = 14
 }
 
-# CloudWatch Log Group for Worker Lambda
-resource "aws_cloudwatch_log_group" "worker_lambda_logs" {
-  name              = "/aws/lambda/${var.worker_lambda_function_name}"
-  retention_in_days = 14
-}
+# CloudWatch Log Group for Worker Lambda - Lambda creates this automatically on first invocation
+# If you need custom retention, import the existing log group or create manually
+# resource "aws_cloudwatch_log_group" "worker_lambda_logs" {
+#   name              = "/aws/lambda/${var.worker_lambda_function_name}"
+#   retention_in_days = 14
+# }
 
 # Outputs
 output "function_url" {

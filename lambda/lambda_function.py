@@ -49,9 +49,7 @@ def is_repo_review_query(query: str) -> bool:
     import re
     has_github_url = re.search(GITHUB_URL_PATTERN, query) is not None
     has_review_keyword = any(keyword in query.lower() for keyword in REPO_REVIEW_KEYWORDS)
-    result = has_github_url and has_review_keyword
-    print(f"DEBUG is_repo_review_query: query={query[:100]}, has_github_url={has_github_url}, has_review_keyword={has_review_keyword}, result={result}")
-    return result
+    return has_github_url and has_review_keyword
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

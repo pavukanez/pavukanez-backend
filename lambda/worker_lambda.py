@@ -14,7 +14,8 @@ from src.tools.github_repo import github_repo_fetch_tree, github_repo_fetch_file
 import boto3
 
 # Use environment variables (set by Terraform)
-AWS_REGION = os.environ.get('AWS_REGION', 'us-east-2')
+# Note: AWS_REGION is reserved in Lambda, use LAMBDA_AWS_REGION instead
+AWS_REGION = os.environ.get('LAMBDA_AWS_REGION', os.environ.get('AWS_REGION', 'us-east-2'))
 REPO_REVIEW_TABLE_NAME = os.environ.get('REPO_REVIEW_TABLE_NAME', 'repo-review-jobs')
 
 sqs = boto3.client('sqs', region_name=AWS_REGION)
