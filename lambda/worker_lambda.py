@@ -12,15 +12,15 @@ from src.agent.graph import invoke_agent
 from src.tools.github_repo import github_repo_fetch_tree, github_repo_fetch_files
 
 import boto3
-# Use default region since settings doesn't have aws_region
+
+# Use environment variables (set by Terraform)
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-2')
+REPO_REVIEW_TABLE_NAME = os.environ.get('REPO_REVIEW_TABLE_NAME', 'repo-review-jobs')
+
 sqs = boto3.client('sqs', region_name=AWS_REGION)
 dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
 
-QUEUE_URL = os.environ.get('REPO_REVIEW_QUEUE_URL', 'https://sqs.us-east-2.amazonaws.com/098876901014/repo-review-queue')
-TABLE_NAME = os.environ.get('REPO_REVIEW_TABLE_NAME', 'repo-review-jobs')
-
-table = dynamodb.Table(TABLE_NAME)
+table = dynamodb.Table(REPO_REVIEW_TABLE_NAME)
 
 
 def update_job_status(job_id: str, status: str, progress: str, partial_result: str = "", result: str = "", error: str = "") -> None:

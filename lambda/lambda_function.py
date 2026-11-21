@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+import uuid
+import boto3
 from typing import Dict, Any, Optional
 
 # Add the current directory to Python path for imports
@@ -28,8 +30,29 @@ DEPLOY_TEST_V13_STATIC_CREDS = True
 DEPLOY_TEST_V14_STREAMING_FIX = True
 
 
+# SQS client for enqueueing repo review jobs
+SQS_QUEUE_URL = os.environ.get('REPO_REVIEW_QUEUE_URL')
+sqs_client = boto3.client('sqs', region_name=os.environ.get('AWS_REGION', 'us-east-2')) if SQS_QUEUE_URL else None
+
+# Repo review keywords that trigger async processing
+REPO_REVIEW_KEYWORDS = [
+    "review", "analyze", "audit", "check", "look at", "inspect",
+    "code review", "security review", "architecture review",
+    "performance review", "code quality"
+]
+
+GITHUB_URL_PATTERN = r'https?://github\.com/([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)'
+
+def is_repo_review_query(query: str) -> bool:
+    """Check if query is a repo review request."""
+    import re
+    has_github_url = re.search(GITHUB_URL_PATTERN, query) is not None
+    has_review_keyword = any(keyword in query.lower() for keyword in REPO_REVIEW_KEYWORDS)
+    return has_github_url and has_review_keyword
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Main Lambda handler with simple agent."""
+    """Main Lambda handler - Entry point for chat/streaming and repo review enqueue."""
     
     # Parse request body
     body = event.get("body", {})
@@ -47,6 +70,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not query:
         return _error_response(400, "Missing 'query' field")
     
+    # Check if this is a repo review request - if so, enqueue to SQS for async processing
+    if is_repo_review_query(query):
+        return _enqueue_repo_review(query, request_id)
+    
     try:
         if stream:
             return _streaming_response(query, history, context)
@@ -56,6 +83,68 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error: {str(e)}")
         return _error_response(500, f"Internal server error: {str(e)}")
+
+
+def _enqueue_repo_review(query: str, request_id: str) -> Dict[str, Any]:
+    """Enqueue a repo review job to SQS for async processing by worker."""
+    if not sqs_client or not SQS_QUEUE_URL:
+        return _error_response(500, "SQS queue not configured for repo reviews")
+    
+    # Extract GitHub URL and focus from query
+    import re
+    github_match = re.search(GITHUB_URL_PATTERN, query)
+    if not github_match:
+        return _error_response(400, "Invalid GitHub URL in query")
+    
+    owner = github_match.group(1)
+    repo = github_match.group(2).replace('.git', '')
+    repo_url = f"https://github.com/{owner}/{repo}"
+    
+    # Extract focus if specified
+    focus = ""
+    focus_keywords = {
+        "security": ["security", "vulnerability", "auth", "authentication", "authorization", "crypto", "encryption", "secret", "token", "permission", "access control"],
+        "performance": ["performance", "speed", "optimization", "slow", "bottleneck", "latency", "throughput", "memory", "cpu", "query", "database", "cache"],
+        "architecture": ["architecture", "design", "pattern", "structure", "modular", "coupling", "cohesion", "dependency", "layer", "service", "component"],
+        "best-practices": ["best practice", "clean code", "style", "convention", "lint", "naming", "documentation", "testing", "maintainability"],
+    }
+    query_lower = query.lower()
+    for focus_name, keywords in focus_keywords.items():
+        if any(keyword in query_lower for keyword in keywords):
+            focus = focus_name
+            break
+    
+    job_id = str(uuid.uuid4())
+    
+    try:
+        sqs_client.send_message(
+            QueueUrl=SQS_QUEUE_URL,
+            MessageBody=json.dumps({
+                "jobId": job_id,
+                "url": repo_url,
+                "focus": focus
+            })
+        )
+        
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "POST, OPTIONS"
+            },
+            "body": json.dumps({
+                "success": True,
+                "jobId": job_id,
+                "status": "pending",
+                "message": f"Repo review job queued. Poll GET /api/repo-reviews/{job_id} for status.",
+                "requestId": request_id
+            })
+        }
+    except Exception as e:
+        print(f"Failed to enqueue repo review: {str(e)}")
+        return _error_response(500, f"Failed to enqueue repo review: {str(e)}")
 
 
 def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any]:

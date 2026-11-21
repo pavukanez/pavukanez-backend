@@ -71,3 +71,9 @@ variable "max_files_per_repo" {
   type        = number
   default     = 200
 }
+
+variable "worker_lambda_function_name" {
+  description = "Name of the Worker Lambda function for async repo reviews"
+  type        = string
+  default     = "pavukanez-backend-worker"
+}

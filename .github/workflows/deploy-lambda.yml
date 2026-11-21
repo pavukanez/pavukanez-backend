@@ -11,6 +11,7 @@ on:
       - '!**/__pycache__/**'
       - '!lambda/deploy_package/**'
       - '!lambda/lambda_package/**'
+      - '!lambda/worker_deploy_package/**'
       - '!lambda/*.zip'
   workflow_dispatch:  # Manual trigger from GitHub UI
 
@@ -38,7 +39,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Package Lambda function with dependencies
+      - name: Package MAIN Lambda function (Entry Lambda - 60s timeout)
         run: |
           set -e
           cd lambda
@@ -74,34 +75,98 @@ jobs:
           )
           echo "PACKAGE_PATH=lambda/function.zip" >> $GITHUB_ENV
 
-      - name: Deploy to Lambda
+      - name: Package WORKER Lambda function (Async Repo Review - 300s timeout)
+        run: |
+          set -e
+          cd lambda
+          
+          # Clean previous builds
+          rm -rf worker_deploy_package
+          rm -f worker_lambda.zip
+          
+          # Create package directory
+          mkdir -p worker_deploy_package
+          
+          # Copy source code
+          cp -r src worker_deploy_package/
+          cp worker_lambda.py worker_deploy_package/
+          cp requirements.txt worker_deploy_package/
+          
+          # Install dependencies and clean up in a subshell to avoid directory issues
+          (
+            cd worker_deploy_package
+            python3 -m pip install --target . -r requirements.txt --quiet --no-cache-dir
+            
+            # Remove unnecessary files to reduce size
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+            find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+            find . -name "*.pyc" -delete 2>/dev/null || true
+            find . -name "*.pyo" -delete 2>/dev/null || true
+            find . -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true
+            find . -name "*.so" -delete 2>/dev/null || true  # Remove compiled extensions (not portable)
+            
+            # Create deployment zip - Lambda expects handler at root, so zip contents of worker_deploy_package
+            zip -r ../worker_lambda.zip .
+          )
+          echo "WORKER_PACKAGE_PATH=lambda/worker_lambda.zip" >> $GITHUB_ENV
+
+      - name: Deploy MAIN Lambda (Entry Lambda - 60s timeout)
         run: |
           aws lambda update-function-code \
             --function-name pavukanez-backend-openrouter \
             --zip-file fileb://${{ env.PACKAGE_PATH }}
           
           # Wait for function to be active before updating configuration
-          echo "Waiting for function code update to complete..."
+          echo "Waiting for MAIN function code update to complete..."
           aws lambda wait function-updated \
             --function-name pavukanez-backend-openrouter
           
-          # Increase timeout for streaming (30s default too short for OpenRouter + tool calls)
-          # 300s (5 min) for repo reviews with iterative file fetching
-          echo "Updating function timeout to 300s..."
+          # Entry Lambda: 60s timeout, 512MB memory (for chat/streaming)
+          echo "Updating MAIN function timeout to 60s and memory to 512MB..."
           aws lambda update-function-configuration \
             --function-name pavukanez-backend-openrouter \
-            --timeout 300 \
-            --memory-size 1024
+            --timeout 60 \
+            --memory-size 512
           
           # Wait for configuration update to complete
           aws lambda wait function-updated \
             --function-name pavukanez-backend-openrouter
 
-      - name: Verify deployment
+      - name: Deploy WORKER Lambda (Async Repo Review - 300s timeout)
+        run: |
+          aws lambda update-function-code \
+            --function-name pavukanez-backend-worker \
+            --zip-file fileb://${{ env.WORKER_PACKAGE_PATH }}
+          
+          # Wait for function to be active before updating configuration
+          echo "Waiting for WORKER function code update to complete..."
+          aws lambda wait function-updated \
+            --function-name pavukanez-backend-worker
+          
+          # Worker Lambda: 300s timeout, 1024MB memory (for repo reviews)
+          echo "Updating WORKER function timeout to 300s and memory to 1024MB..."
+          aws lambda update-function-configuration \
+            --function-name pavukanez-backend-worker \
+            --timeout 300 \
+            --memory-size 1024
+          
+          # Wait for configuration update to complete
+          aws lambda wait function-updated \
+            --function-name pavukanez-backend-worker
+
+      - name: Verify MAIN deployment
         run: |
           aws lambda get-function \
             --function-name pavukanez-backend-openrouter \
-            --query 'Configuration.{FunctionName:FunctionName,LastModified:LastModified,CodeSize:CodeSize}' \
+            --query 'Configuration.{FunctionName:FunctionName,LastModified:LastModified,CodeSize:CodeSize,Timeout:Timeout,MemorySize:MemorySize}' \
+            --output table
+
+      - name: Verify WORKER deployment
+        run: |
+          aws lambda get-function \
+            --function-name pavukanez-backend-worker \
+            --query 'Configuration.{FunctionName:FunctionName,LastModified:LastModified,CodeSize:CodeSize,Timeout:Timeout,MemorySize:MemorySize}' \
             --output table
 
       - name: Configure Function URL for response streaming
