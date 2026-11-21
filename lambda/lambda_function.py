@@ -82,8 +82,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _error_response(400, "Missing 'query' field")
     
     # Check if this is a repo review request - if so, enqueue to SQS for async processing
-    if is_repo_review_query(query):
-        return _enqueue_repo_review(query, request_id)
+    is_repo = is_repo_review_query(query)
+    print(f"DEBUG: is_repo_review={is_repo}")
+    if is_repo:
+        print("DEBUG: Calling _enqueue_repo_review")
+        result = _enqueue_repo_review(query, request_id)
+        print(f"DEBUG: _enqueue_repo_review returned: {result}")
+        return result
     
     try:
         if stream:
