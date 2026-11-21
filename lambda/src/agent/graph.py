@@ -272,6 +272,7 @@ def invoke_agent(query: str, history: str = "", max_tool_calls: int = 3) -> str:
         http_client.close()
 
 # Streaming function moved to end of file
+# DEPLOY_TRIGGER: streaming v2
 async def invoke_agent_streaming(
     query: str, 
     history: str = "", 
