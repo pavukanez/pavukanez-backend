@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LambdaStreamingConfig",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListFunctionUrlConfigs",
+        "lambda:UpdateFunctionUrlConfig",
+        "lambda:CreateFunctionUrlConfig",
+        "lambda:GetFunctionUrlConfig"
+      ],
+      "Resource": "arn:aws:lambda:us-east-2:098876901014:function:pavukanez-backend-openrouter"
+    }
+  ]
+}

@@ -90,17 +90,30 @@ jobs:
       - name: Configure Function URL for response streaming
         run: |
           # Enable RESPONSE_STREAM mode for true streaming support
+          # Note: Requires lambda:ListFunctionUrlConfigs and lambda:UpdateFunctionUrlConfig permissions
+          set +e  # Don't fail deployment if permissions missing
           FUNCTION_URL=$(aws lambda list-function-url-configs \
             --function-name pavukanez-backend-openrouter \
             --query 'FunctionUrlConfigs[0].FunctionUrl' \
-            --output text)
+            --output text 2>/dev/null)
+          LIST_EXIT_CODE=$?
           
-          if [ "$FUNCTION_URL" != "None" ] && [ -n "$FUNCTION_URL" ]; then
+          if [ $LIST_EXIT_CODE -eq 0 ] && [ "$FUNCTION_URL" != "None" ] && [ -n "$FUNCTION_URL" ]; then
             echo "Updating Function URL to RESPONSE_STREAM mode..."
             aws lambda update-function-url-config \
               --function-name pavukanez-backend-openrouter \
-              --invoke-mode RESPONSE_STREAM
-            echo "Function URL streaming mode enabled: $FUNCTION_URL"
+              --invoke-mode RESPONSE_STREAM 2>/dev/null
+            UPDATE_EXIT_CODE=$?
+            if [ $UPDATE_EXIT_CODE -eq 0 ]; then
+              echo "Function URL streaming mode enabled: $FUNCTION_URL"
+            else
+              echo "Warning: Could not update Function URL (check IAM permissions for lambda:UpdateFunctionUrlConfig)"
+            fi
+          elif [ $LIST_EXIT_CODE -ne 0 ]; then
+            echo "Warning: Could not list Function URLs (check IAM permissions for lambda:ListFunctionUrlConfigs)"
+            echo "Run './lambda/enable_streaming.sh' manually after deployment"
           else
             echo "No Function URL found, skipping streaming config"
+            echo "Run './lambda/enable_streaming.sh' manually to create one"
           fi
+          set -e
