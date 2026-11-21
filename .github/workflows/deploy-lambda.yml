@@ -80,10 +80,20 @@ jobs:
             --function-name pavukanez-backend-openrouter \
             --zip-file fileb://${{ env.PACKAGE_PATH }}
           
+          # Wait for function to be active before updating configuration
+          echo "Waiting for function code update to complete..."
+          aws lambda wait function-updated \
+            --function-name pavukanez-backend-openrouter
+          
           # Increase timeout for streaming (30s default too short for OpenRouter + tool calls)
+          echo "Updating function timeout to 60s..."
           aws lambda update-function-configuration \
             --function-name pavukanez-backend-openrouter \
             --timeout 60
+          
+          # Wait for configuration update to complete
+          aws lambda wait function-updated \
+            --function-name pavukanez-backend-openrouter
 
       - name: Verify deployment
         run: |
