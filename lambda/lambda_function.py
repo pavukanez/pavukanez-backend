@@ -67,7 +67,7 @@ def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any
         print("WARNING: response_stream not available, falling back to non-streaming")
         return _non_streaming_response(query, history)
     
-    print(f"Streaming request: {query[:100]}...")
+    print(f"=== STREAMING START: {query[:100]}... ===")
     
     # Write initial headers
     response_stream.write(json.dumps({
@@ -79,6 +79,7 @@ def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any
             "Access-Control-Allow-Methods": "POST, OPTIONS"
         }
     }) + "\n")
+    print("Initial headers written")
     
     try:
         # Use true streaming from OpenRouter
@@ -86,15 +87,20 @@ def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any
         
         async def stream_tokens():
             token_count = 0
+            print("Starting invoke_agent_streaming...")
             async for token in invoke_agent_streaming(query, history):
                 token_count += 1
-                if token_count % 50 == 0:
+                if token_count % 10 == 1:
                     print(f"Streamed {token_count} tokens...")
                 response_stream.write(json.dumps({"body": token}) + "\n")
+                if token_count == 1:
+                    print("First token written to stream")
             
-            print(f"Streaming complete: {token_count} tokens")
+            print(f"Streaming complete: {token_count} tokens total")
         
+        print("Running asyncio.run...")
         asyncio.run(stream_tokens())
+        print("asyncio.run completed")
         
         response_stream.write(json.dumps({"body": "", "isFinal": True}) + "\n")
         print("Final chunk sent")
@@ -106,6 +112,7 @@ def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any
         response_stream.write(json.dumps({"body": f"Error: {str(e)}", "isFinal": True}) + "\n")
     
     response_stream.end()
+    print("=== STREAMING END ===")
     return {}  # No return value for streaming
 
 
