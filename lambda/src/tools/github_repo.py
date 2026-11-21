@@ -293,8 +293,8 @@ class GitHubRepoTool:
         """Parse GitHub URL to extract owner and repo."""
         # Handle various URL formats
         patterns = [
-            r"github\\.com/([^/]+)/([^/#?]+)",
-            r"github\\.com/([^/]+)/([^/#?]+)\\.git",
+            r"github\.com/([^/]+)/([^/#?]+)",
+            r"github\.com/([^/]+)/([^/#?]+)\.git",
         ]
         for pattern in patterns:
             match = re.search(pattern, url)
