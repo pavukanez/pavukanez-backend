@@ -49,9 +49,7 @@ def is_repo_review_query(query: str) -> bool:
     import re
     has_github_url = re.search(GITHUB_URL_PATTERN, query) is not None
     has_review_keyword = any(keyword in query.lower() for keyword in REPO_REVIEW_KEYWORDS)
-    result = has_github_url and has_review_keyword
-    print(f"DEBUG is_repo_review_query: query={query[:100]}, has_github_url={has_github_url}, has_review_keyword={has_review_keyword}, result={result}")
-    return result
+    return has_github_url and has_review_keyword
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -82,13 +80,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _error_response(400, "Missing 'query' field")
     
     # Check if this is a repo review request - if so, enqueue to SQS for async processing
-    is_repo = is_repo_review_query(query)
-    print(f"DEBUG: is_repo_review={is_repo}")
-    if is_repo:
-        print("DEBUG: Calling _enqueue_repo_review")
-        result = _enqueue_repo_review(query, request_id)
-        print(f"DEBUG: _enqueue_repo_review returned: {result}")
-        return result
+    if is_repo_review_query(query):
+        return _enqueue_repo_review(query, request_id)
     
     try:
         if stream:
