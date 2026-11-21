@@ -1,112 +1,65 @@
-"""Tests for LangGraph agent."""
+"""Tests for agent graph."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from src.agent.state import AgentState
-from src.agent.nodes import agent_node, should_continue
-from src.agent.prompts import SYSTEM_PROMPT
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from unittest.mock import MagicMock, patch
+import json
+import httpx
+from src.agent.graph import invoke_agent, SYSTEM_PROMPT
 
 
 @pytest.fixture
-def mock_llm_with_tools():
-    """Mock LLM with tools."""
-    mock_llm = MagicMock()
-    mock_response = AIMessage(content="Test response")
-    mock_response.tool_calls = []
-    mock_llm.invoke.return_value = mock_response
-    return mock_llm
+def mock_httpx_client():
+    """Mock httpx client for OpenRouter API."""
+    with patch('httpx.Client') as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        yield mock_client
 
 
-@pytest.fixture
-def sample_state():
-    """Create a sample agent state."""
-    return AgentState(
-        messages=[HumanMessage(content="Hello")],
-        query="Hello",
-        history="",
-        stream=False,
-        tool_call_count=0,
-        max_tool_calls=3,
-        request_id="test-123",
-        user_id=None,
-    )
+def test_system_prompt_contains_daniel():
+    """Test that system prompt contains Daniel's info."""
+    assert "Daniel Pham" in SYSTEM_PROMPT
+    assert "Backend & Cloud Infrastructure Engineer" in SYSTEM_PROMPT
+    assert "GitHub repositories" in SYSTEM_PROMPT
 
 
-def test_agent_node_adds_system_prompt(sample_state, mock_llm_with_tools):
-    """Test that agent node adds system prompt if missing."""
-    with patch('src.agent.graph.llm_with_tools', mock_llm_with_tools):
-        result = agent_node(sample_state)
-
-        # Check system prompt was added
-        call_args = mock_llm_with_tools.invoke.call_args[0][0]
-        assert any(isinstance(m, SystemMessage) and "Daniel" in m.content for m in call_args)
-        assert len(result["messages"]) == 1
+def test_system_prompt_contains_github_tools():
+    """Test that system prompt mentions GitHub repo tools."""
+    assert "github_repo_fetch_tree" in SYSTEM_PROMPT
+    assert "github_repo_fetch_files" in SYSTEM_PROMPT
 
 
-def test_agent_node_uses_existing_system_prompt(mock_llm_with_tools):
-    """Test that agent node doesn't duplicate system prompt."""
-    state = AgentState(
-        messages=[
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content="Hello")
-        ],
-        query="Hello",
-        history="",
-        stream=False,
-        tool_call_count=0,
-        max_tool_calls=3,
-        request_id="test-123",
-        user_id=None,
-    )
-
-    with patch('src.agent.graph.llm_with_tools', mock_llm_with_tools):
-        result = agent_node(state)
-
-        call_args = mock_llm_with_tools.invoke.call_args[0][0]
-        # Should have only one system message
-        system_count = sum(1 for m in call_args if isinstance(m, SystemMessage) and "Daniel" in m.content)
-        assert system_count == 1
+def test_invoke_agent_with_simple_query(mock_httpx_client):
+    """Test invoke_agent handles simple query without tools."""
+    # Mock the HTTP response
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [{
+            "message": {
+                "content": "Hello! I'm Daniel's agent.",
+                "role": "assistant"
+            }
+        }]
+    }
+    mock_httpx_client.post.return_value = mock_response
+    
+    result = invoke_agent("Hello", "", max_tool_calls=3)
+    
+    assert "Hello" in result or "Daniel" in result
 
 
-def test_should_continue_no_tool_calls(sample_state):
-    """Test should_continue returns 'end' when no tool calls."""
-    mock_msg = AIMessage(content="Hi there!")
-    mock_msg.tool_calls = []
-
-    sample_state["messages"] = [
-        HumanMessage(content="Hello"),
-        mock_msg
-    ]
-
-    result = should_continue(sample_state)
-    assert result == "end"
-
-
-def test_should_continue_with_tool_calls(sample_state):
-    """Test should_continue returns 'continue' when tool calls present."""
-    mock_msg = AIMessage(content="")
-    mock_msg.tool_calls = [{"name": "google_search", "args": {"query": "test"}}]
-
-    sample_state["messages"] = [
-        HumanMessage(content="Hello"),
-        mock_msg
-    ]
-
-    result = should_continue(sample_state)
-    assert result == "continue"
-
-
-def test_should_continue_max_tool_calls_reached(sample_state):
-    """Test should_continue returns 'end' when max tool calls reached."""
-    mock_msg = AIMessage(content="")
-    mock_msg.tool_calls = [{"name": "google_search", "args": {"query": "test"}}]
-
-    sample_state["messages"] = [
-        HumanMessage(content="Hello"),
-        mock_msg
-    ]
-    sample_state["tool_call_count"] = 3
-    sample_state["max_tool_calls"] = 3
-
-    result = should_continue(sample_state)
-    assert result == "end"
+def test_invoke_agent_handles_error():
+    """Test invoke_agent raises exception on API errors."""
+    with patch('src.agent.graph.httpx.Client') as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal server error"
+        mock_client.post.return_value = mock_response
+        
+        with pytest.raises(Exception) as exc_info:
+            invoke_agent("Hello", "", max_tool_calls=3)
+        
+    assert "OpenRouter API error: 500" in str(exc_info.value)

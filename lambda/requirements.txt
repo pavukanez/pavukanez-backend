@@ -2,9 +2,6 @@
 # Only use packages that are pure Python or have good manylinux wheels
 # NO openai, NO pydantic, NO langchain
 
-# DuckDuckGo Search (no API key needed)
-ddgs==9.16.1
-
 # Redis (Upstash) - for rate limiting & caching
 upstash-redis==1.0.0
 

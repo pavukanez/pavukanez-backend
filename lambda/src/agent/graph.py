@@ -1,32 +1,13 @@
 """Simple agent without LangGraph - direct HTTP requests to OpenRouter API."""
 import json
 import httpx
+import re
 from typing import List, Dict, Any
 from ..config.settings import settings
-from ..tools.google_search import DuckDuckGoSearchTool
 from ..tools.github_repo import github_repo_fetch_tree, github_repo_fetch_files
-
-# Initialize tools
-duckduckgo_search_tool = DuckDuckGoSearchTool()
 
 # Tool definitions for OpenRouter function calling
 TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "duckduckgo_search",
-            "description": "Search the web for current information, news, facts, or answers to questions. Use this when you need up-to-date information not in your training data. Returns structured results with title, URL, snippet, and source.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query string"},
-                    "num_results": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5, "description": "Number of results to return"},
-                    "recency_days": {"type": "integer", "description": "Limit results to last N days"}
-                },
-                "required": ["query"]
-            }
-        }
-    },
     {
         "type": "function",
         "function": {
@@ -64,6 +45,98 @@ TOOLS = [
     }
 ]
 
+GITHUB_URL_PATTERN = re.compile(
+    r'https?://github\.com/([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)'
+)
+
+REPO_REVIEW_KEYWORDS = [
+    "review", "analyze", "audit", "check", "look at", "inspect",
+    "code review", "security review", "architecture review",
+    "performance review", "code quality"
+]
+
+class QueryIntent:
+    """Result of intent classification."""
+    REPO_REVIEW = "repo_review"
+    GENERIC_QUERY = "generic_query"
+    AMBIGUOUS = "ambiguous"
+
+class IntentResult:
+    """Result of intent classification with extracted data."""
+    def __init__(self, intent: str, repo_url: str = None, focus: str = None, clarification: str = None):
+        self.intent = intent
+        self.repo_url = repo_url
+        self.focus = focus
+        self.clarification = clarification
+
+def classify_intent(query: str):
+    """
+    Classify the user's query intent.
+    
+    Returns:
+        IntentResult with intent type and extracted data (repo_url, focus, etc.)
+    """
+    query_lower = query.lower().strip()
+    
+    # Check for GitHub URL
+    github_match = GITHUB_URL_PATTERN.search(query)
+    repo_url = None
+    if github_match:
+        owner = github_match.group(1)
+        repo = github_match.group(2).replace('.git', '')
+        repo_url = f"https://github.com/{owner}/{repo}"
+    
+    # Check for repo review keywords
+    has_review_keyword = any(keyword in query_lower for keyword in REPO_REVIEW_KEYWORDS)
+    
+    # Determine intent
+    if repo_url and has_review_keyword:
+        # Explicit repo URL + review keyword = clear repo review intent
+        focus = _extract_focus(query_lower)
+        return IntentResult("repo_review", repo_url=repo_url, focus=focus)
+    
+    if repo_url and not has_review_keyword:
+        # URL without explicit review keyword - could be ambiguous
+        # Check if query is just the URL or has a question about it
+        if len(query.strip()) > len(repo_url) + 10:
+            # Has additional context beyond just the URL
+            focus = _extract_focus(query_lower)
+            return IntentResult("repo_review", repo_url=repo_url, focus=focus)
+        else:
+            # Just the URL - ask for clarification
+            return IntentResult(
+                "ambiguous",
+                repo_url=repo_url,
+                clarification="Please specify what you'd like me to do with this repository (e.g., 'review', 'analyze for security issues', 'check architecture')."
+            )
+    
+    if has_review_keyword and not repo_url:
+        # Review keywords but no URL - ambiguous
+        return IntentResult(
+            "ambiguous",
+            clarification="Please provide a GitHub repository URL (e.g., https://github.com/owner/repo) for me to review."
+        )
+    
+    # No repo URL, no review keywords = generic query
+    return IntentResult("generic_query")
+
+
+def _extract_focus(query: str) -> str:
+    """Extract review focus from query."""
+    focus_map = {
+        "security": ["security", "vulnerability", "auth", "authentication", "authorization", "crypto", "encryption", "secret", "token", "permission", "access control"],
+        "performance": ["performance", "speed", "optimization", "slow", "bottleneck", "latency", "throughput", "memory", "cpu", "query", "database", "cache"],
+        "architecture": ["architecture", "design", "pattern", "structure", "modular", "coupling", "cohesion", "dependency", "layer", "service", "component"],
+        "best-practices": ["best practice", "clean code", "style", "convention", "lint", "naming", "documentation", "testing", "maintainability"],
+    }
+    
+    query_lower = query.lower()
+    for focus, keywords in focus_map.items():
+        if any(keyword in query_lower for keyword in keywords):
+            return focus
+    return "general"
+
+
 SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant representing Daniel Pham.
 
 ## About Daniel Pham
@@ -75,99 +148,14 @@ SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant representing Danie
 
 ## Your Capabilities
 - Answer questions about Daniel's background, skills, experience, and projects
-- Search the web for current information using the duckduckgo_search tool
 - **Review GitHub repositories (public only) using iterative code review**
 - Be helpful, knowledgeable, and professional
 
-## Intent Classification (CRITICAL - Do this FIRST for every query)
-
-Before using any tools, analyze the user's query to determine intent:
-
-**REPO REVIEW INTENT** - User wants to review/analyze a GitHub repository:
-- Query contains a GitHub URL (github.com/owner/repo)
-- User asks to "review", "analyze", "audit", "check", "look at" a repository
-- User mentions "code review", "security review", "architecture review"
-- User provides a repo URL with a question about it
-
-**GENERIC QUERY INTENT** - User asks a general question:
-- No GitHub URL in query
-- Asks about Daniel's background, skills, experience
-- Asks general coding questions
-- Asks for explanations, tutorials, best practices
-- Asks about current events, tech news
-
-**ROUTING RULES:**
-- If REPO REVIEW INTENT: Use the iterative GitHub review pattern below
-- If GENERIC QUERY INTENT: Answer directly WITHOUT using github_repo tools
-- If ambiguous: Ask clarifying question
-
-## GitHub Code Review - Iterative Pattern (CRITICAL)
-
-When a user provides a GitHub repository URL for review, you MUST follow this iterative pattern:
-
-### Phase 1: FETCH TREE
-1. Call `github_repo_fetch_tree` with the repo URL
-2. Analyze the file tree - note: languages, key directories, file sizes
-3. Based on user's query/focus, SELECT the most relevant files to review
-
-### Phase 2: FETCH FILES
-4. Call `github_repo_fetch_files` with the selected file paths (max 15-20 at a time)
-5. Review the fetched code thoroughly
-
-### Phase 3: REVIEW & ITERATE
-6. Provide findings for the reviewed files
-7. If more files need review, go back to Phase 2 with new file paths
-8. Continue until you have sufficient coverage or hit token limits
-
-### Phase 4: SYNTHESIZE
-9. Provide a final structured review in markdown
-
-### File Selection Guidelines:
-- **Security focus**: auth, crypto, input validation, SQL, secrets, permissions
-- **Performance focus**: algorithms, DB queries, caching, async patterns, loops
-- **Architecture focus**: entry points, core modules, interfaces, DI, config
-- **General review**: main files, largest files, test files, recent changes
-- Prioritize: .py, .ts, .tsx, .java, .go files over config/markdown
-- Skip: node_modules, dist, build, vendor, __pycache__, .git, minified files
-
-### Review Output Format (Markdown):
-```markdown
-## Code Review: {owner}/{repo}
-
-### 📋 Summary
-- **Language(s)**: Python, TypeScript, etc.
-- **Files Reviewed**: X of Y total
-- **Focus**: Security / Performance / Architecture / General
-
-### 🔍 Key Findings
-
-#### 🔴 Critical Issues
-- **File**: `path/to/file.py:42` - Description of issue
-  - **Risk**: High/Medium/Low
-  - **Recommendation**: Specific fix
-
-#### 🟡 Warnings
-- **File**: `path/to/file.ts:100` - Description
-  - **Recommendation**: Improvement suggestion
-
-#### 🟢 Best Practices / Suggestions
-- **File**: `path/to/file.go` - Positive pattern or minor improvement
-
-### 📁 Files Reviewed
-- `src/main.py` - Entry point, reviewed
-- `src/auth/jwt.py` - Authentication, reviewed
-- ...
-
-### 🔗 Repository: https://github.com/owner/repo
-```
-
 ## Tool Usage Guidelines
-- Use duckduckgo_search for: current events, recent tech updates, fact verification
 - Use github_repo_fetch_tree FIRST for any repo review request
 - Use github_repo_fetch_files AFTER tree fetch to get code
-- Do NOT search for: personal info about Daniel (use your knowledge)
-- Always cite sources when using search results
-- Limit to 2-3 searches per conversation turn
+- Do NOT search for: personal info about Daniel (use your knowledge), basic coding questions
+- Limit to 2-3 tool calls per conversation turn
 """
 
 # OpenRouter API configuration
@@ -240,14 +228,7 @@ def invoke_agent(query: str, history: str = "", max_tool_calls: int = 3) -> str:
                 import json as json_lib
                 args = json_lib.loads(tool_call["function"]["arguments"])
                 
-                if func_name == "duckduckgo_search":
-                    result = duckduckgo_search_tool._run(**args)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": result
-                    })
-                elif func_name == "github_repo_fetch_tree":
+                if func_name == "github_repo_fetch_tree":
                     result = github_repo_fetch_tree(**args)
                     messages.append({
                         "role": "tool",
