@@ -64,7 +64,10 @@ def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any
     
     if not response_stream:
         # Fallback: collect all and return
+        print("WARNING: response_stream not available, falling back to non-streaming")
         return _non_streaming_response(query, history)
+    
+    print(f"Streaming request: {query[:100]}...")
     
     # Write initial headers
     response_stream.write(json.dumps({
@@ -82,15 +85,24 @@ def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any
         import asyncio
         
         async def stream_tokens():
+            token_count = 0
             async for token in invoke_agent_streaming(query, history):
+                token_count += 1
+                if token_count % 50 == 0:
+                    print(f"Streamed {token_count} tokens...")
                 response_stream.write(json.dumps({"body": token}) + "\n")
+            
+            print(f"Streaming complete: {token_count} tokens")
         
         asyncio.run(stream_tokens())
         
         response_stream.write(json.dumps({"body": "", "isFinal": True}) + "\n")
+        print("Final chunk sent")
         
     except Exception as e:
+        import traceback
         print(f"Streaming error: {str(e)}")
+        print(traceback.format_exc())
         response_stream.write(json.dumps({"body": f"Error: {str(e)}", "isFinal": True}) + "\n")
     
     response_stream.end()

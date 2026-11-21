@@ -79,6 +79,11 @@ jobs:
           aws lambda update-function-code \
             --function-name pavukanez-backend-openrouter \
             --zip-file fileb://${{ env.PACKAGE_PATH }}
+          
+          # Increase timeout for streaming (30s default too short for OpenRouter + tool calls)
+          aws lambda update-function-configuration \
+            --function-name pavukanez-backend-openrouter \
+            --timeout 60
 
       - name: Verify deployment
         run: |
