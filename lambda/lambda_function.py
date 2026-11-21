@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Load settings early
 from src.config.settings import settings
-from src.agent.graph import invoke_agent
+from src.agent.graph import invoke_agent, invoke_agent_streaming
 
 
 # Deployment test marker - triggers GitHub Actions workflow
@@ -78,14 +78,14 @@ def _streaming_response(query: str, history: str, context: Any) -> Dict[str, Any
     }) + "\n")
     
     try:
-        # For now, use non-streaming and simulate streaming
-        response_text = invoke_agent(query, history)
+        # Use true streaming from OpenRouter
+        import asyncio
         
-        # Stream the response in chunks
-        chunk_size = 50
-        for i in range(0, len(response_text), chunk_size):
-            chunk = response_text[i:i+chunk_size]
-            response_stream.write(json.dumps({"body": chunk}) + "\n")
+        async def stream_tokens():
+            async for token in invoke_agent_streaming(query, history):
+                response_stream.write(json.dumps({"body": token}) + "\n")
+        
+        asyncio.run(stream_tokens())
         
         response_stream.write(json.dumps({"body": "", "isFinal": True}) + "\n")
         

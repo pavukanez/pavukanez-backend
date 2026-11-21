@@ -2,7 +2,7 @@
 import json
 import httpx
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, AsyncGenerator, Optional
 from ..config.settings import settings
 from ..tools.github_repo import github_repo_fetch_tree, github_repo_fetch_files
 
@@ -270,3 +270,155 @@ def invoke_agent(query: str, history: str = "", max_tool_calls: int = 3) -> str:
     
     finally:
         http_client.close()
+
+# Streaming function moved to end of file
+async def invoke_agent_streaming(
+    query: str, 
+    history: str = "", 
+    max_tool_calls: int = 3
+) -> AsyncGenerator[str, None]:
+    """Invoke the agent with streaming response from OpenRouter."""
+    
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT}
+    ]
+    
+    if history:
+        messages.append({"role": "user", "content": f"Previous context: {history}"})
+    
+    messages.append({"role": "user", "content": query})
+    
+    async with httpx.AsyncClient(timeout=60.0) as http_client:
+        try:
+            while True:
+                payload = {
+                    "model": OPENROUTER_MODEL,
+                    "messages": messages,
+                    "tools": TOOLS,
+                    "tool_choice": "auto",
+                    "temperature": 0.7,
+                    "max_tokens": 4000,
+                    "stream": True,
+                }
+                
+                headers = {
+                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://pavukanez.vercel.app",
+                    "X-Title": "Daniel Pham AI Agent",
+                    "Accept": "text/event-stream",
+                }
+                
+                async with http_client.stream(
+                    "POST",
+                    OPENROUTER_API_URL,
+                    json=payload,
+                    headers=headers,
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        raise Exception(f"OpenRouter API error: {response.status_code} - {error_text.decode()}")
+                    
+                    tool_calls_buffer = []
+                    accumulated_content = ""
+                    
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        try:
+                            parsed = json.loads(data)
+                            delta = parsed.get("choices", [{}])[0].get("delta", {})
+                            
+                            if "tool_calls" in delta:
+                                for tc in delta["tool_calls"]:
+                                    index = tc.get("index", 0)
+                                    if index >= len(tool_calls_buffer):
+                                        tool_calls_buffer.append({"id": "", "function": {"name": "", "arguments": ""}})
+                                    tc_buf = tool_calls_buffer[index]
+                                    if "id" in tc:
+                                        tc_buf["id"] = tc["id"]
+                                    if "function" in tc:
+                                        if "name" in tc["function"]:
+                                            tc_buf["function"]["name"] = tc["function"]["name"]
+                                        if "arguments" in tc["function"]:
+                                            tc_buf["function"]["arguments"] += tc["function"]["arguments"]
+                            
+                            if "content" in delta and delta["content"]:
+                                content = delta["content"]
+                                accumulated_content += content
+                                yield content
+                        
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    if tool_calls_buffer:
+                        assistant_message = {
+                            "role": "assistant",
+                            "content": accumulated_content or None,
+                            "tool_calls": tool_calls_buffer
+                        }
+                        messages.append(assistant_message)
+                        
+                        for tool_call in tool_calls_buffer:
+                            func_name = tool_call["function"]["name"]
+                            import json as json_lib
+                            args = json_lib.loads(tool_call["function"]["arguments"])
+                            
+                            if func_name == "github_repo_fetch_tree":
+                                result = github_repo_fetch_tree(**args)
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call["id"],
+                                    "content": result
+                                })
+                            elif func_name == "github_repo_fetch_files":
+                                result = github_repo_fetch_files(**args)
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call["id"],
+                                    "content": result
+                                })
+                        
+                        if len([m for m in messages if m.get("role") == "tool"]) >= max_tool_calls:
+                            break
+                        continue
+                    
+                    break
+            
+            payload = {
+                "model": OPENROUTER_MODEL,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 4000,
+                "stream": True,
+            }
+            
+            async with http_client.stream(
+                "POST",
+                OPENROUTER_API_URL,
+                json=payload,
+                headers=headers,
+            ) as response:
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    raise Exception(f"OpenRouter API error: {response.status_code} - {error_text.decode()}")
+                
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        parsed = json.loads(data)
+                        content = parsed.get("choices", [{}])[0].get("delta", {}).get("content")
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        pass
+        
+        except Exception as e:
+            yield f"Error: {str(e)}"

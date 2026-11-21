@@ -86,3 +86,21 @@ jobs:
             --function-name pavukanez-backend-openrouter \
             --query 'Configuration.{FunctionName:FunctionName,LastModified:LastModified,CodeSize:CodeSize}' \
             --output table
+
+      - name: Configure Function URL for response streaming
+        run: |
+          # Enable RESPONSE_STREAM mode for true streaming support
+          FUNCTION_URL=$(aws lambda list-function-url-configs \
+            --function-name pavukanez-backend-openrouter \
+            --query 'FunctionUrlConfigs[0].FunctionUrl' \
+            --output text)
+          
+          if [ "$FUNCTION_URL" != "None" ] && [ -n "$FUNCTION_URL" ]; then
+            echo "Updating Function URL to RESPONSE_STREAM mode..."
+            aws lambda update-function-url-config \
+              --function-name pavukanez-backend-openrouter \
+              --invoke-mode RESPONSE_STREAM
+            echo "Function URL streaming mode enabled: $FUNCTION_URL"
+          else
+            echo "No Function URL found, skipping streaming config"
+          fi
