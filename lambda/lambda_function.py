@@ -25,6 +25,7 @@ DEPLOY_TEST_V10_DEBUG_TOKEN = True
 DEPLOY_TEST_V11_FIXED_SUB_PATTERN = True
 DEPLOY_TEST_V12_OIDC_CLIENT_ID = True
 DEPLOY_TEST_V13_STATIC_CREDS = True
+DEPLOY_TEST_V14_STREAMING_FIX = True
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
