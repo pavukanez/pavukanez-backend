@@ -9,8 +9,10 @@
 # Lambda build artifacts
 lambda/function.zip
 lambda/lambda_function.zip
+lambda/worker_lambda.zip
 lambda/deploy_package/
 lambda/lambda_package/
+lambda/worker_deploy_package/
 
 # IDE
 .vscode/
