@@ -63,9 +63,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         except json.JSONDecodeError:
             return _error_response(400, "Invalid JSON in request body")
     
-    query = body.get("query", "").strip()
-    history = body.get("history", "").strip()
-    stream = body.get("stream", False)
+    # Handle both formats: direct {query, history, stream} or wrapped {payload: {query, history, stream}}
+    if "payload" in body and isinstance(body["payload"], dict):
+        payload = body["payload"]
+        query = payload.get("query", "").strip()
+        history = payload.get("history", "").strip()
+        stream = payload.get("stream", False)
+    else:
+        query = body.get("query", "").strip()
+        history = body.get("history", "").strip()
+        stream = body.get("stream", False)
+    
     request_id = event.get("requestContext", {}).get("requestId", "local")
     
     if not query:
