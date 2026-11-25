@@ -158,20 +158,52 @@ SYSTEM_PROMPT = """You are Daniel's Agent — an AI assistant representing Danie
 - Limit to 2-3 tool calls per conversation turn
 """
 
+# System prompt for when tools are disabled (files already provided)
+SYSTEM_PROMPT_NO_TOOLS = """You are Daniel's Agent — an AI assistant representing Daniel Pham.
+
+## About Daniel Pham
+- **Role**: Backend & Cloud Infrastructure Engineer
+- **Experience**: 3+ years
+- **Specialization**: Backend development, cloud infrastructure, AI agents
+- **Previous Companies**: Cisco, AWS, Novozymes, TIAA
+- **Tech Stack**: Python, TypeScript, Terraform, Kubernetes, AWS, LangGraph
+
+## Your Capabilities
+- Answer questions about Daniel's background, skills, experience, and projects
+- **Review GitHub repositories (public only) using provided code**
+- Be helpful, knowledgeable, and professional
+
+## Guidelines
+- The repository files have already been provided in the prompt
+- Do NOT use any function calls or tool calls
+- Provide a comprehensive code review directly based on the provided files
+- Format as markdown with sections: ## Code Review, ### Security Findings, ### Performance Findings, ### Architecture Findings, ### Best Practices
+"""
+
 # OpenRouter API configuration
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Use model from settings (configured via OPENROUTER_MODEL env var, defaults to openrouter/auto)
 OPENROUTER_MODEL = settings.openrouter_model
 
 
-def invoke_agent(query: str, history: str = "", max_tool_calls: int = 3) -> str:
-    """Invoke the agent with the given query and optional history using direct HTTP requests."""
+def invoke_agent(query: str, history: str = "", max_tool_calls: int = 3, use_tools: bool = True) -> str:
+    """Invoke the agent with the given query and optional history using direct HTTP requests.
+    
+    Args:
+        query: The user's query
+        history: Optional conversation history
+        max_tool_calls: Maximum number of tool calls allowed
+        use_tools: Whether to provide tools to the LLM (default True)
+    """
     
     # Get API key from settings
     api_key = settings.openrouter_api_key
     
+    # Use appropriate system prompt based on whether tools are enabled
+    system_prompt = SYSTEM_PROMPT if use_tools else SYSTEM_PROMPT_NO_TOOLS
+    
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT}
+        {"role": "system", "content": system_prompt}
     ]
     
     if history:
@@ -189,11 +221,13 @@ def invoke_agent(query: str, history: str = "", max_tool_calls: int = 3) -> str:
             payload = {
                 "model": OPENROUTER_MODEL,
                 "messages": messages,
-                "tools": TOOLS,
-                "tool_choice": "auto",
                 "temperature": 0.7,
                 "max_tokens": 4000,
             }
+            
+            if use_tools:
+                payload["tools"] = TOOLS
+                payload["tool_choice"] = "auto"
             
             headers = {
                 "Authorization": f"Bearer {settings.openrouter_api_key}",
@@ -217,37 +251,42 @@ def invoke_agent(query: str, history: str = "", max_tool_calls: int = 3) -> str:
             messages.append(message)
             
             # Check for tool calls
-            tool_calls = message.get("tool_calls", [])
-            if not tool_calls:
-                # No tool calls, return the response
-                return message.get("content", "") or ""
-            
-            # Execute tool calls
-            for tool_call in tool_calls:
-                func_name = tool_call["function"]["name"]
-                import json as json_lib
-                args = json_lib.loads(tool_call["function"]["arguments"])
+            if use_tools:
+                tool_calls = message.get("tool_calls", [])
+                if not tool_calls:
+                    # No tool calls, return the response
+                    return message.get("content", "") or ""
                 
-                if func_name == "github_repo_fetch_tree":
-                    result = github_repo_fetch_tree(**args)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": result
-                    })
-                elif func_name == "github_repo_fetch_files":
-                    result = github_repo_fetch_files(**args)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": result
-                    })
-            
-            # Check max tool calls
-            if len([m for m in messages if m.get("role") == "tool"]) >= max_tool_calls:
-                break
+                # Execute tool calls
+                for tool_call in tool_calls:
+                    func_name = tool_call["function"]["name"]
+                    import json as json_lib
+                    args = json_lib.loads(tool_call["function"]["arguments"])
+                    
+                    if func_name == "github_repo_fetch_tree":
+                        result = github_repo_fetch_tree(**args)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": result
+                        })
+                    elif func_name == "github_repo_fetch_files":
+                        result = github_repo_fetch_files(**args)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": result
+                        })
+                
+                # Check max tool calls
+                if len([m for m in messages if m.get("role") == "tool"]) >= max_tool_calls:
+                    # Max tool calls reached, get final response without tools
+                    break
+            else:
+                # No tools mode - return response directly
+                return message.get("content", "") or ""
         
-        # Max tool calls reached, get final response
+        # Max tool calls reached or tools disabled, get final response without tools
         payload = {
             "model": OPENROUTER_MODEL,
             "messages": messages,

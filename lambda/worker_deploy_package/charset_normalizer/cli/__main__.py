@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 import typing
-from os.path import abspath, basename, dirname, join, realpath
+from os.path import abspath, basename, dirname, join, realpath, splitext
 from platform import python_version
 from unicodedata import unidata_version
 
@@ -300,10 +300,10 @@ def cli_detect(argv: list[str] | None = None) -> int:
                 dir_path = dirname(realpath(my_file.name))
                 file_name = basename(realpath(my_file.name))
 
-                o_: list[str] = file_name.split(".")
-
                 if args.replace is False:
-                    o_.insert(-1, best_guess.encoding)
+                    # "sample.txt" -> "sample.cp1252.txt", "README" -> "README.cp1252"
+                    root, ext = splitext(file_name)
+                    file_name = f"{root}.{best_guess.encoding}{ext}"
                     if my_file.closed is False:
                         my_file.close()
                 elif (
@@ -321,7 +321,7 @@ def cli_detect(argv: list[str] | None = None) -> int:
                     continue
 
                 try:
-                    cli_result.unicode_path = join(dir_path, ".".join(o_))
+                    cli_result.unicode_path = join(dir_path, file_name)
 
                     with open(cli_result.unicode_path, "wb") as fp:
                         fp.write(best_guess.output())
@@ -339,7 +339,9 @@ def cli_detect(argv: list[str] | None = None) -> int:
 
         print(
             dumps(
-                [el.__dict__ for el in x_] if len(x_) > 1 else x_[0].__dict__,
+                [el.__dict__ for el in x_]
+                if args.alternatives or len(x_) > 1
+                else x_[0].__dict__,
                 ensure_ascii=True,
                 indent=4,
             )
@@ -360,4 +362,4 @@ def cli_detect(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":  # Defensive:
-    cli_detect()
+    raise SystemExit(cli_detect())

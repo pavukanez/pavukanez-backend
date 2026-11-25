@@ -183,13 +183,20 @@ class GitHubRepoTool:
         redis = Redis(url=settings.upstash_url, token=settings.upstash_token)
         self._rate_limiter = RateLimiter(redis, limit=settings.github_rate_limit)
         self._cache = SearchCache(redis, default_ttl=settings.github_cache_ttl)
-        self._http_client = httpx.AsyncClient(
-            timeout=30.0,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "DanielPhamAgent/1.0",
-            }
-        )
+        # Don't create http client here - create lazily in async methods to avoid event loop issues
+        self._http_client = None
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create the httpx client for the current event loop."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                timeout=30.0,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "DanielPhamAgent/1.0",
+                }
+            )
+        return self._http_client
 
     @property
     def rate_limiter(self) -> RateLimiter:
@@ -271,7 +278,7 @@ class GitHubRepoTool:
                 fetched_files = await self._execute_fetch_files(owner, repo, files_to_fetch, input_data)
                 # Cache fetched files
                 for f in fetched_files:
-                    cache_key = f"github:file:{owner}:{repo}:{hashlib.sha256(f['path']).hexdigest()[:16]}"
+                    cache_key = f"github:file:{owner}:{repo}:{hashlib.sha256(f['path'].encode()).hexdigest()[:16]}"
                     await self.cache.set(cache_key, f, ttl=settings.github_cache_ttl)
             except Exception as e:
                 return json.dumps({"error": f"Failed to fetch files: {str(e)}"})
@@ -308,9 +315,10 @@ class GitHubRepoTool:
 
     async def _execute_fetch_tree(self, owner: str, repo: str, input_data: GitHubRepoInput) -> dict:
         """Execute the tree fetch via GitHub API."""
+        client = await self._get_http_client()
         # Get repo info first
         repo_url = f"{self.GITHUB_API_BASE}/repos/{owner}/{repo}"
-        repo_resp = await self._http_client.get(repo_url)
+        repo_resp = await client.get(repo_url)
         if repo_resp.status_code == 404:
             raise Exception("Repository not found or private")
         if repo_resp.status_code != 200:
@@ -326,7 +334,7 @@ class GitHubRepoTool:
 
         # Get recursive tree
         tree_url = f"{self.GITHUB_API_BASE}/repos/{owner}/{repo}/git/trees/{default_branch}?recursive=1"
-        tree_resp = await self._http_client.get(tree_url)
+        tree_resp = await client.get(tree_url)
         if tree_resp.status_code != 200:
             raise Exception(f"Failed to fetch tree: {tree_resp.status_code}")
 
@@ -387,11 +395,12 @@ class GitHubRepoTool:
     async def _execute_fetch_files(self, owner: str, repo: str, file_paths: List[str], input_data: GitHubRepoInput) -> List[dict]:
         """Fetch multiple file contents in parallel (batched)."""
         semaphore = asyncio.Semaphore(10)  # Max 10 concurrent requests
+        client = await self._get_http_client()
 
         async def fetch_one(path: str) -> Optional[dict]:
             async with semaphore:
                 url = f"{self.GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}"
-                resp = await self._http_client.get(url)
+                resp = await client.get(url)
                 if resp.status_code != 200:
                     return None
                 data = resp.json()
@@ -424,7 +433,8 @@ class GitHubRepoTool:
     # ──────────────────────────────────────────────
 
     async def close(self):
-        await self._http_client.aclose()
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()
 
 
 # ──────────────────────────────────────────────

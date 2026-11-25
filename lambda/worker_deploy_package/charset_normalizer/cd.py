@@ -6,6 +6,7 @@ from functools import lru_cache
 
 from .constant import (
     FREQUENCIES,
+    JP_NAMES,
     KO_NAMES,
     LANGUAGE_SUPPORTED_COUNT,
     TOO_SMALL_SEQUENCE,
@@ -116,16 +117,11 @@ def mb_encoding_languages(iana_name: str) -> list[str]:
     Multi-byte encoding language association. Some code page are heavily linked to particular language(s).
     This function does the correspondence.
     """
-    if (
-        iana_name.startswith("shift_")
-        or iana_name.startswith("iso2022_jp")
-        or iana_name.startswith("euc_j")
-        or iana_name == "cp932"
-    ):
+    if iana_name in JP_NAMES:
         return ["Japanese"]
-    if iana_name.startswith("gb") or iana_name in ZH_NAMES:
+    if iana_name in ZH_NAMES:
         return ["Chinese"]
-    if iana_name.startswith("iso2022_kr") or iana_name in KO_NAMES:
+    if iana_name in KO_NAMES:
         return ["Korean"]
 
     return []
@@ -396,15 +392,7 @@ def filter_alt_coherence_matches(results: CoherenceMatches) -> CoherenceMatches:
 
         index_results[no_em_name].append(ratio)
 
-    if any(len(index_results[e]) > 1 for e in index_results):
-        filtered_results: CoherenceMatches = []
-
-        for language in index_results:
-            filtered_results.append((language, max(index_results[language])))
-
-        return filtered_results
-
-    return results
+    return [(language, max(ratios)) for language, ratios in index_results.items()]
 
 
 def coherence_ratio(

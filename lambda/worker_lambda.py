@@ -1,4 +1,5 @@
 """SQS-triggered Worker Lambda for async repo reviews."""
+# Force rebuild: fix for hashlib encoding bug
 import json
 import os
 import sys
@@ -94,8 +95,6 @@ def process_repo_review(job_id: str, url: str, focus: str) -> str:
     files = tree_data.get("tree", [])
     file_paths = [f["path"] for f in files[:50]]
     
-    update_job_status(job_id, "running", f"Fetching {len(file_paths)} files...")
-    
     batch_size = 10
     all_files = []
     for i in range(0, len(file_paths), batch_size):
@@ -121,7 +120,8 @@ Repository files:
 
 Provide a comprehensive code review covering security, performance, architecture, and best practices. Format as markdown with sections: ## Code Review, ### Security Findings, ### Performance Findings, ### Architecture Findings, ### Best Practices."""
     
-    review = invoke_agent(review_query, "")
+    # Use invoke_agent without tools since files are already provided in the prompt
+    review = invoke_agent(review_query, "", use_tools=False)
     return review
 
 

@@ -87,6 +87,8 @@ resource "null_resource" "worker_lambda_package" {
   triggers = {
     requirements_hash = filemd5("${path.module}/../lambda/requirements.txt")
     source_hash       = filemd5("${path.module}/../lambda/worker_lambda.py")
+    # Track src directory changes by hashing all .py files
+    src_hash          = filemd5("${path.module}/../lambda/src/tools/github_repo.py")
   }
 
   provisioner "local-exec" {
